@@ -39,7 +39,8 @@ jobs:
         run: cargo test --all-targets
 
   python-test:
-    name: Python Test (${{ matrix.os }}, py${{ matrix.python-version }})
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    needs: rust-check
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -60,18 +61,16 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Install uv and tools
-        run: |
-          pip install --upgrade pip
-          pip install maturin ruff pytest pytest-benchmark defusedxml
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies and build safexml
+        run: uv pip install --system -e ".[dev]"
 
       - name: Lint Python with Ruff
         run: |
           ruff check python tests
           ruff format --check python tests
-
-      - name: Build and install safexml
-        run: maturin develop
 
       - name: Run pytest
         run: pytest -v
