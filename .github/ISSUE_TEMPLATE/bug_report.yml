@@ -1,0 +1,41 @@
+name: Bug Report
+description: Report an issue, parse error, or regression in SafeXML
+title: "[BUG]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! Please fill out the sections below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem Description
+      description: What happened? What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal Reproducible Example
+      description: Provide the XML payload and Python code snippet that reproduces the issue.
+      render: python
+    validations:
+      required: true
+
+  - type: textarea
+    id: traceback
+    attributes:
+      label: Error Traceback / Logs
+      description: Include any relevant exception traceback or error output.
+      render: text
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS version (Linux/macOS/Windows), Python version (>= 3.12), and SafeXML version (`safexml.__version__`).
+    validations:
+      required: true

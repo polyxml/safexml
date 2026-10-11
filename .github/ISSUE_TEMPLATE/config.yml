@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/polyxml/safexml/discussions
+    about: Ask general questions, request advice, or discuss migration from defusedxml.
+  - name: Security Vulnerabilities
+    url: https://github.com/polyxml/safexml/security/advisories/new
+    about: Report security issues and vulnerability bypasses privately.
