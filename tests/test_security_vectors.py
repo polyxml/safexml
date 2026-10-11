@@ -240,3 +240,156 @@ def test_max_elements_limit() -> None:
     # Allowed when below or equal to limit
     root = ET.fromstring(xml, max_elements=6)
     assert len(root) == 5
+
+
+def test_multiple_roots_and_trailing_unclosed_tags() -> None:
+    """Document state machine must reject multiple roots and trailing junk."""
+    from safexml.common import ParseError
+
+    # Multiple roots
+    with pytest.raises(ParseError):
+        ET.fromstring("<signed/><unsigned/>")
+
+    # Trailing unclosed element
+    with pytest.raises(ParseError):
+        ET.fromstring("<signed/><unsigned>")
+
+    # DOCTYPE after root
+    with pytest.raises(ParseError, match="DOCTYPE declaration not allowed"):
+        ET.fromstring("<r/><!DOCTYPE r>")
+
+
+def test_unbound_prefix_rejection() -> None:
+    """Elements and attributes with undeclared namespace prefixes must be rejected."""
+    from safexml.common import ParseError
+
+    with pytest.raises(ParseError, match="unbound prefix"):
+        ET.fromstring("<p:root/>")
+
+    with pytest.raises(ParseError, match="unbound prefix"):
+        ET.fromstring('<root p:attr="value"/>')
+
+
+def test_duplicate_expanded_attribute_rejection() -> None:
+    """Attributes that resolve to identical expanded names must be rejected."""
+    from safexml.common import ParseError
+
+    xml = '<r xmlns:a="urn:x" xmlns:b="urn:x" a:id="signed" b:id="unsigned"/>'
+    with pytest.raises(ParseError, match="duplicate attribute"):
+        ET.fromstring(xml)
+
+
+def test_invalid_xml_names_and_chars_rejection() -> None:
+    """XML 1.0 well-formedness rules must reject invalid names, control characters, and malformed syntax."""
+    from safexml.common import ParseError
+
+    # Invalid tag name starting with digit
+    with pytest.raises(ParseError):
+        ET.fromstring("<1root/>")
+
+    # NUL character in text
+    with pytest.raises(ParseError, match="Null byte|character"):
+        ET.fromstring("<r>\x00</r>")
+
+    # Invalid numeric entity (NUL)
+    with pytest.raises(ParseError, match="Invalid XML character reference"):
+        ET.fromstring("<r>&#0;</r>")
+
+    # Uppercase hex entity reference
+    with pytest.raises(ParseError, match="Invalid uppercase character reference"):
+        ET.fromstring("<r>&#X41;</r>")
+
+    # Raw '<' in attribute value
+    with pytest.raises(ParseError, match="Attribute value contains unescaped"):
+        ET.fromstring('<r a="<"/>')
+
+    # Double-dash inside comment
+    with pytest.raises(ParseError, match="Comment cannot contain '--'"):
+        ET.fromstring("<r><!--a--b--></r>")
+
+
+def test_multibyte_utf8_dtd_robustness() -> None:
+    """Multi-byte UTF-8 sequences in DTD must not panic or corrupt scanner indexing."""
+    from safexml.common import ParseError
+
+    # Multibyte character in DTD name/text
+    root = ET.fromstring("<!DOCTYPE r é><r/>")
+    assert root.tag == "r"
+
+    # Multibyte entity value blocked cleanly without panic
+    with pytest.raises((EntitiesForbidden, ParseError)):
+        ET.fromstring("<!DOCTYPE r [<!ENTITY e é>]><r/>")
+
+    # Comment containing multibyte character in DTD parsed cleanly
+    root_cmt = ET.fromstring("<!DOCTYPE r [<!-- <!ENTITY fake é> -->]><r/>")
+    assert root_cmt.tag == "r"
+
+    # Comment containing quoted entity in DTD
+    root_cmt2 = ET.fromstring('<!DOCTYPE r [<!-- <!ENTITY fake "x"> -->]><r/>')
+    assert root_cmt2.tag == "r"
+
+
+def test_namespace_amplification_defense() -> None:
+    """Namespace declarations and values must be bounded by attribute limits."""
+    # Attribute count limit applies to xmlns
+    with pytest.raises(DefusedXmlException, match="attribute count limit"):
+        ET.fromstring('<r xmlns:a="x" xmlns:b="y"/>', max_attributes=1)
+
+    # Attribute size limit applies to xmlns URI
+    with pytest.raises(DefusedXmlException, match="maximum size limit"):
+        ET.fromstring('<r xmlns="http://example.com/very/long/uri"/>', max_attribute_size=10)
+
+    # Namespace entity expansion & resolution
+    root = ET.fromstring('<r xmlns="urn:a&amp;b"/>')
+    assert root.tag == "{urn:a&b}r"
+
+    with pytest.raises(EntitiesForbidden):
+        ET.fromstring('<r xmlns="urn:&evil;"/>')
+
+
+def test_short_read_stream_robustness() -> None:
+    """Stream reader must handle chunked reads and enforce limits across chunk boundaries."""
+
+    class ChunkedStream:
+        def __init__(self, data: bytes, chunk_size: int = 4) -> None:
+            self.data = data
+            self.chunk_size = chunk_size
+            self.pos = 0
+
+        def read(self, n: int = -1) -> bytes:
+            if self.pos >= len(self.data):
+                return b""
+            amt = min(self.chunk_size, len(self.data) - self.pos)
+            res = self.data[self.pos : self.pos + amt]
+            self.pos += amt
+            return res
+
+    xml_data = b"<root><child id='c1'>content</child></root>"
+    stream = ChunkedStream(xml_data, chunk_size=3)
+    root = ET.parse(stream).getroot()
+    assert root.tag == "root"
+    assert root[0].attrib["id"] == "c1"
+    assert root[0].text == "content"
+
+
+def test_deep_nesting_wrappers_no_recursion_error() -> None:
+    """iterparse, sax, and minidom must handle deep document trees iteratively without RecursionError."""
+    from xml.sax.handler import ContentHandler
+
+    import safexml.minidom
+    import safexml.sax
+
+    depth = 1000
+    xml = "<r>" * depth + "</r>" * depth
+
+    # ElementTree.iterparse
+    events = list(ET.iterparse(io.StringIO(xml)))
+    assert len(events) == depth
+
+    # SAX
+    handler = ContentHandler()
+    safexml.sax.parseString(xml, handler)
+
+    # Minidom
+    doc = safexml.minidom.parseString(xml)
+    assert doc.documentElement.tagName == "r"

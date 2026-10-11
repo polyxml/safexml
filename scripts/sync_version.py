@@ -69,7 +69,10 @@ def check_versions() -> bool:
     c_ver = get_cargo_version()
     p_ver = get_pyproject_version()
     if c_ver != p_ver:
-        print(f"Version mismatch detected:\n  Cargo.toml:     {c_ver}\n  pyproject.toml: {p_ver}", file=sys.stderr)
+        print(
+            f"Version mismatch detected:\n  Cargo.toml:     {c_ver}\n  pyproject.toml: {p_ver}",
+            file=sys.stderr,
+        )
         return False
     print(f"Version parity confirmed: {c_ver}")
     return True
@@ -85,8 +88,12 @@ def sync_all(target_ver: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sync or check safexml version parity.")
-    parser.add_argument("--check", action="store_true", help="Check version parity across manifests")
-    parser.add_argument("--set", dest="set_version", metavar="VERSION", help="Set new version across all manifests")
+    parser.add_argument(
+        "--check", action="store_true", help="Check version parity across manifests"
+    )
+    parser.add_argument(
+        "--set", dest="set_version", metavar="VERSION", help="Set new version across all manifests"
+    )
     parser.add_argument("--get", action="store_true", help="Print current version")
 
     args = parser.parse_args()
@@ -108,4 +115,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

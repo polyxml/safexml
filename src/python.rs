@@ -40,7 +40,7 @@ fn map_safe_error_to_py(py: Python<'_>, err: SafeXmlError) -> PyErr {
     to_err().unwrap_or_else(|e| e)
 }
 
-fn raw_to_py_element<'py>(
+fn create_single_py_element<'py>(
     py: Python<'py>,
     element_cls: &Bound<'py, PyAny>,
     node: &RawElement,
@@ -56,11 +56,47 @@ fn raw_to_py_element<'py>(
     if let Some(tail) = &node.tail {
         elem.setattr("tail", tail)?;
     }
-    for child in &node.children {
-        let child_elem = raw_to_py_element(py, element_cls, child)?;
-        elem.call_method1("append", (child_elem,))?;
-    }
     Ok(elem)
+}
+
+struct ConvertFrame<'a, 'py> {
+    py_elem: Bound<'py, PyAny>,
+    node: &'a RawElement,
+    child_idx: usize,
+}
+
+fn raw_to_py_element<'py>(
+    py: Python<'py>,
+    element_cls: &Bound<'py, PyAny>,
+    root_node: &RawElement,
+) -> PyResult<Bound<'py, PyAny>> {
+    let root_elem = create_single_py_element(py, element_cls, root_node)?;
+    let mut stack = vec![ConvertFrame {
+        py_elem: root_elem,
+        node: root_node,
+        child_idx: 0,
+    }];
+
+    while let Some(frame) = stack.last_mut() {
+        if frame.child_idx < frame.node.children.len() {
+            let child_node = &frame.node.children[frame.child_idx];
+            frame.child_idx += 1;
+            let child_elem = create_single_py_element(py, element_cls, child_node)?;
+            frame.py_elem.call_method1("append", (&child_elem,))?;
+            stack.push(ConvertFrame {
+                py_elem: child_elem,
+                node: child_node,
+                child_idx: 0,
+            });
+        } else {
+            if stack.len() == 1 {
+                return Ok(stack.pop().unwrap().py_elem);
+            }
+            stack.pop();
+        }
+    }
+
+    create_single_py_element(py, element_cls, root_node)
 }
 
 #[pyfunction]
@@ -102,20 +138,39 @@ fn parse_xml<'py>(
     } else if let Ok(b) = source.extract::<&[u8]>() {
         b
     } else if source.hasattr("read")? {
-        // Read one byte past the limit: enough to detect an oversized stream
-        // without pulling an arbitrarily large document into memory.
-        let read_res = source.call_method1("read", (max_input_size.saturating_add(1),))?;
-        if let Ok(s) = read_res.extract::<&str>() {
-            bytes_vec = s.as_bytes().to_vec();
-            &bytes_vec
-        } else if let Ok(b) = read_res.extract::<&[u8]>() {
-            bytes_vec = b.to_vec();
-            &bytes_vec
-        } else {
-            return Err(PyValueError::new_err(
-                "source.read() must return str or bytes",
-            ));
+        let mut accumulated: Vec<u8> = Vec::new();
+        let chunk_size = 65536.min(max_input_size.saturating_add(1));
+        loop {
+            let chunk_obj = source.call_method1("read", (chunk_size,))?;
+            let chunk_bytes: &[u8] = if let Ok(s) = chunk_obj.extract::<&str>() {
+                if s.is_empty() {
+                    break;
+                }
+                s.as_bytes()
+            } else if let Ok(b) = chunk_obj.extract::<&[u8]>() {
+                if b.is_empty() {
+                    break;
+                }
+                b
+            } else {
+                return Err(PyValueError::new_err(
+                    "source.read() must return str or bytes",
+                ));
+            };
+
+            accumulated.extend_from_slice(chunk_bytes);
+            if accumulated.len() > max_input_size {
+                let common = py.import("safexml.common")?;
+                let msg = format!(
+                    "XML input exceeded maximum size limit of {} bytes",
+                    max_input_size
+                );
+                let inst = common.getattr("DefusedXmlException")?.call1((msg,))?;
+                return Err(PyErr::from_value(inst));
+            }
         }
+        bytes_vec = accumulated;
+        &bytes_vec
     } else {
         return Err(PyValueError::new_err(
             "source must be str, bytes, or file-like object with a read() method",

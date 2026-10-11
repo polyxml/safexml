@@ -17,7 +17,6 @@ from xml.etree.ElementTree import (
     QName,
     SubElement,
     TreeBuilder,
-    XMLParser,
     canonicalize,
     dump,
     indent,
@@ -41,6 +40,75 @@ from safexml.common import (
 
 # Standard alias
 XMLParse = ParseError
+
+
+class XMLParser:
+    """Secure XMLParser compatible with xml.etree.ElementTree.XMLParser and defusedxml."""
+
+    def __init__(
+        self,
+        *,
+        target: Any | None = None,
+        encoding: str | None = None,
+        forbid_dtd: bool = False,
+        forbid_entities: bool = True,
+        forbid_external: bool = True,
+        max_depth: int = 1000,
+        max_entity_size: int = 10 * 1024 * 1024,
+        max_text_size: int = 100 * 1024 * 1024,
+        max_attributes: int = 1000,
+        max_attribute_size: int = 10 * 1024 * 1024,
+        max_name_size: int = 1024,
+        max_comment_size: int = 10 * 1024 * 1024,
+        max_input_size: int = 256 * 1024 * 1024,
+        max_elements: int = 5_000_000,
+    ) -> None:
+        self.target = target
+        self.encoding = encoding
+        self.forbid_dtd = forbid_dtd
+        self.forbid_entities = forbid_entities
+        self.forbid_external = forbid_external
+        self.max_depth = max_depth
+        self.max_entity_size = max_entity_size
+        self.max_text_size = max_text_size
+        self.max_attributes = max_attributes
+        self.max_attribute_size = max_attribute_size
+        self.max_name_size = max_name_size
+        self.max_comment_size = max_comment_size
+        self.max_input_size = max_input_size
+        self.max_elements = max_elements
+        self._data: list[str | bytes] = []
+
+    def feed(self, data: str | bytes) -> None:
+        self._data.append(data)
+
+    def close(self) -> Element:
+        if not self._data:
+            combined: str | bytes = ""
+        elif isinstance(self._data[0], str):
+            combined = "".join(self._data)  # type: ignore[arg-type]
+        else:
+            combined = b"".join(self._data)  # type: ignore[arg-type]
+        self._data.clear()
+
+        return _parse_xml(
+            combined,
+            forbid_dtd=self.forbid_dtd,
+            forbid_entities=self.forbid_entities,
+            forbid_external=self.forbid_external,
+            max_depth=self.max_depth,
+            max_entity_size=self.max_entity_size,
+            max_text_size=self.max_text_size,
+            max_attributes=self.max_attributes,
+            max_attribute_size=self.max_attribute_size,
+            max_name_size=self.max_name_size,
+            max_comment_size=self.max_comment_size,
+            max_input_size=self.max_input_size,
+            max_elements=self.max_elements,
+        )
+
+
+DefusedXMLParser = XMLParser
 
 
 class ElementTree(_StdlibElementTree):
@@ -106,27 +174,7 @@ def fromstring(
     max_input_size: int = 256 * 1024 * 1024,
     max_elements: int = 5_000_000,
 ) -> Element:
-    """Parse XML from string or bytes with strict security defenses.
-
-    Args:
-        text: XML string or bytes to parse.
-        parser: Optional custom parser (supported for signature parity with stdlib).
-        forbid_dtd: If True, reject any `<!DOCTYPE>` declarations with `DTDForbidden`.
-        forbid_entities: If True, reject entity declarations and references with `EntitiesForbidden`.
-        forbid_external: If True, reject external SYSTEM/PUBLIC references with `ExternalReferenceForbidden`.
-        max_depth: Maximum allowed element nesting depth (default 1000).
-        max_entity_size: Maximum allowed entity size (default 10MB).
-        max_text_size: Maximum allowed accumulated text size (default 100MB).
-        max_attributes: Maximum allowed attributes per element (default 1000).
-        max_attribute_size: Maximum allowed size per attribute in bytes (default 10MB).
-        max_name_size: Maximum allowed element tag or attribute name length (default 1024).
-        max_comment_size: Maximum allowed XML comment size in bytes (default 10MB).
-        max_input_size: Maximum allowed input size in bytes (default 256MB).
-        max_elements: Maximum total elements in the document (default 5,000,000).
-
-    Returns:
-        The root `xml.etree.ElementTree.Element`.
-    """
+    """Parse XML from string or bytes with strict security defenses."""
     return _parse_xml(
         text,
         forbid_dtd=forbid_dtd,
@@ -145,6 +193,45 @@ def fromstring(
 
 
 XML = fromstring
+
+
+def fromstringlist(
+    sequence: list[str] | list[bytes] | tuple[str, ...] | tuple[bytes, ...],
+    parser: Any | None = None,
+    forbid_dtd: bool = False,
+    forbid_entities: bool = True,
+    forbid_external: bool = True,
+    max_depth: int = 1000,
+    max_entity_size: int = 10 * 1024 * 1024,
+    max_text_size: int = 100 * 1024 * 1024,
+    max_attributes: int = 1000,
+    max_attribute_size: int = 10 * 1024 * 1024,
+    max_name_size: int = 1024,
+    max_comment_size: int = 10 * 1024 * 1024,
+    max_input_size: int = 256 * 1024 * 1024,
+    max_elements: int = 5_000_000,
+) -> Element:
+    """Parse XML from a sequence of fragments."""
+    if not sequence:
+        raise ParseError("No XML root element found")
+    first = sequence[0]
+    text = "".join(sequence) if isinstance(first, str) else b"".join(sequence)  # type: ignore[arg-type]
+    return fromstring(
+        text,
+        parser=parser,
+        forbid_dtd=forbid_dtd,
+        forbid_entities=forbid_entities,
+        forbid_external=forbid_external,
+        max_depth=max_depth,
+        max_entity_size=max_entity_size,
+        max_text_size=max_text_size,
+        max_attributes=max_attributes,
+        max_attribute_size=max_attribute_size,
+        max_name_size=max_name_size,
+        max_comment_size=max_comment_size,
+        max_input_size=max_input_size,
+        max_elements=max_elements,
+    )
 
 
 def parse(
@@ -205,60 +292,74 @@ def parse(
     return tree
 
 
-def iterparse(
-    source: str | bytes | os.PathLike[Any] | IO[Any],
-    events: tuple[str, ...] | list[str] | None = None,
-    parser: Any | None = None,
-    forbid_dtd: bool = False,
-    forbid_entities: bool = True,
-    forbid_external: bool = True,
-    max_depth: int = 1000,
-    max_entity_size: int = 10 * 1024 * 1024,
-    max_text_size: int = 100 * 1024 * 1024,
-    max_attributes: int = 1000,
-    max_attribute_size: int = 10 * 1024 * 1024,
-    max_name_size: int = 1024,
-    max_comment_size: int = 10 * 1024 * 1024,
-    max_input_size: int = 256 * 1024 * 1024,
-    max_elements: int = 5_000_000,
-) -> Iterator[tuple[str, Element]]:
-    """Incrementally parse an XML document, yielding (event, elem) pairs safely.
+class iterparse:
+    """Incrementally parse an XML document, yielding (event, elem) pairs safely."""
 
-    Events can contain 'start' and 'end' (default is ('end',)).
-    """
-    wanted_events = set(events or ("end",))
-    tree = parse(
-        source,
-        parser=parser,
-        forbid_dtd=forbid_dtd,
-        forbid_entities=forbid_entities,
-        forbid_external=forbid_external,
-        max_depth=max_depth,
-        max_entity_size=max_entity_size,
-        max_text_size=max_text_size,
-        max_attributes=max_attributes,
-        max_attribute_size=max_attribute_size,
-        max_name_size=max_name_size,
-        max_comment_size=max_comment_size,
-        max_input_size=max_input_size,
-        max_elements=max_elements,
-    )
-    root = tree.getroot()
+    def __init__(
+        self,
+        source: str | bytes | os.PathLike[Any] | IO[Any],
+        events: tuple[str, ...] | list[str] | None = None,
+        parser: Any | None = None,
+        forbid_dtd: bool = False,
+        forbid_entities: bool = True,
+        forbid_external: bool = True,
+        max_depth: int = 1000,
+        max_entity_size: int = 10 * 1024 * 1024,
+        max_text_size: int = 100 * 1024 * 1024,
+        max_attributes: int = 1000,
+        max_attribute_size: int = 10 * 1024 * 1024,
+        max_name_size: int = 1024,
+        max_comment_size: int = 10 * 1024 * 1024,
+        max_input_size: int = 256 * 1024 * 1024,
+        max_elements: int = 5_000_000,
+    ) -> None:
+        self.root: Element | None = None
+        tree = parse(
+            source,
+            parser=parser,
+            forbid_dtd=forbid_dtd,
+            forbid_entities=forbid_entities,
+            forbid_external=forbid_external,
+            max_depth=max_depth,
+            max_entity_size=max_entity_size,
+            max_text_size=max_text_size,
+            max_attributes=max_attributes,
+            max_attribute_size=max_attribute_size,
+            max_name_size=max_name_size,
+            max_comment_size=max_comment_size,
+            max_input_size=max_input_size,
+            max_elements=max_elements,
+        )
+        self.root = tree.getroot()
+        self._events = tuple(events or ("end",))
+        self._iter = self._generate_events(self.root, self._events)
 
-    def _traverse(elem: Element) -> Iterator[tuple[str, Element]]:
-        if "start" in wanted_events:
-            yield ("start", elem)
-        for child in elem:
-            yield from _traverse(child)
-        if "end" in wanted_events:
-            yield ("end", elem)
+    def _generate_events(self, root: Element, events: tuple[str, ...]) -> Iterator[tuple[str, Any]]:
+        wanted = set(events)
+        stack: list[tuple[Element, bool]] = [(root, False)]
+        while stack:
+            elem, visited = stack.pop()
+            if visited:
+                if "end" in wanted:
+                    yield ("end", elem)
+            else:
+                if "start" in wanted:
+                    yield ("start", elem)
+                stack.append((elem, True))
+                for child in reversed(elem):
+                    stack.append((child, False))
 
-    yield from _traverse(root)
+    def __iter__(self) -> Iterator[tuple[str, Any]]:
+        return self
+
+    def __next__(self) -> tuple[str, Any]:
+        return next(self._iter)
 
 
 __all__ = [
     "Comment",
     "DTDForbidden",
+    "DefusedXMLParser",
     "DefusedXmlException",
     "Element",
     "ElementTree",
@@ -277,6 +378,7 @@ __all__ = [
     "canonicalize",
     "dump",
     "fromstring",
+    "fromstringlist",
     "indent",
     "iterparse",
     "parse",

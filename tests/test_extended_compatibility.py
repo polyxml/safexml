@@ -79,13 +79,71 @@ def test_pep561_py_typed_marker() -> None:
     assert py_typed.is_file(), f"Missing PEP 561 marker at {py_typed}"
 
 
+def test_fromstringlist_support() -> None:
+    """`fromstringlist()` parses sequence of string or bytes fragments and enforces security."""
+    from safexml.common import ParseError
+
+    # Empty sequence
+    with pytest.raises(ParseError, match="No XML root element"):
+        safexml.fromstringlist([])
+
+    # String sequence
+    root_str = safexml.fromstringlist(["<root>", "<item id='1'>test</item>", "</root>"])
+    assert root_str.tag == "root"
+    assert root_str[0].text == "test"
+
+    # Bytes sequence
+    root_bytes = safexml.fromstringlist([b"<root>", b"<item id='2'>bytes</item>", b"</root>"])
+    assert root_bytes.tag == "root"
+    assert root_bytes[0].attrib["id"] == "2"
+
+    # Security enforcement
+    with pytest.raises(EntitiesForbidden):
+        safexml.fromstringlist(['<!DOCTYPE bomb [<!ENTITY a "123">]><bomb>&a;</bomb>'])
+
+
 def test_defuse_stdlib_interoperability() -> None:
     """`defuse_stdlib()` must safely protect standard library XML parsing functions without breaking class identity."""
+    import io
+
     orig_fromstring = std_ET.fromstring
+    orig_parse = std_ET.parse
+    orig_iterparse = std_ET.iterparse
+    orig_xml = std_ET.XML
+    orig_xmlparser = std_ET.XMLParser
+    orig_fromstringlist = getattr(std_ET, "fromstringlist", None)
+    orig_et_parse = std_ET.ElementTree.parse
+
     try:
         safexml.defuse_stdlib()
         # Verify stdlib fromstring now blocks entities
         with pytest.raises(EntitiesForbidden):
             std_ET.fromstring('<!DOCTYPE bomb [<!ENTITY a "123">]><bomb>&a;</bomb>')
+
+        # Verify stdlib fromstringlist now blocks entities
+        with pytest.raises(EntitiesForbidden):
+            std_ET.fromstringlist(['<!DOCTYPE bomb [<!ENTITY a "123">]><bomb>&a;</bomb>'])
+
+        # Verify stdlib ElementTree().parse() works on valid XML and blocks entities
+        tree = std_ET.ElementTree()
+        safe_root = tree.parse(io.StringIO("<root><item/></root>"))
+        assert safe_root.tag == "root"
+        assert tree.getroot() is safe_root
+
+        with pytest.raises(EntitiesForbidden):
+            tree.parse(io.StringIO('<!DOCTYPE bomb [<!ENTITY a "123">]><bomb>&a;</bomb>'))
+
+        # Verify stdlib XMLParser() blocks entities
+        parser = std_ET.XMLParser()
+        parser.feed('<!DOCTYPE bomb [<!ENTITY a "123">]><bomb>&a;</bomb>')
+        with pytest.raises(EntitiesForbidden):
+            parser.close()
     finally:
         std_ET.fromstring = orig_fromstring
+        std_ET.parse = orig_parse
+        std_ET.iterparse = orig_iterparse
+        std_ET.XML = orig_xml
+        std_ET.XMLParser = orig_xmlparser
+        if orig_fromstringlist is not None:
+            std_ET.fromstringlist = orig_fromstringlist
+        std_ET.ElementTree.parse = orig_et_parse

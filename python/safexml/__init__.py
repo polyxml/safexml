@@ -35,6 +35,7 @@ from safexml.ElementTree import (
     canonicalize,
     dump,
     fromstring,
+    fromstringlist,
     indent,
     iterparse,
     parse,
@@ -56,6 +57,15 @@ def defuse_stdlib() -> dict[str, object]:
     _stdlib_etree.parse = parse
     _stdlib_etree.iterparse = iterparse
     _stdlib_etree.XML = XML
+    _stdlib_etree.XMLParser = XMLParser
+    _stdlib_etree.fromstringlist = fromstringlist
+
+    def _patched_et_parse(self, source, parser=None, **kwargs):
+        root = parse(source, parser=parser, **kwargs).getroot()
+        self._setroot(root)
+        return root
+
+    _stdlib_etree.ElementTree.parse = _patched_et_parse
 
     _stdlib_minidom.parse = minidom.parse
     _stdlib_minidom.parseString = minidom.parseString
@@ -93,6 +103,7 @@ __all__ = [
     "defuse_stdlib",
     "dump",
     "fromstring",
+    "fromstringlist",
     "indent",
     "iterparse",
     "minidom",

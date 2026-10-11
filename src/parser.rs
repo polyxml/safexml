@@ -1,6 +1,7 @@
-use crate::doctype;
+use crate::doctype::{self, AttlistDeclInfo};
+use quick_xml::encoding::DecodingReader;
 use quick_xml::events::Event;
-use quick_xml::name::{NamespaceResolver, QName, ResolveResult};
+use quick_xml::name::{Namespace, NamespaceResolver, PrefixDeclaration, ResolveResult};
 use quick_xml::reader::Reader;
 
 #[derive(Debug, Clone, Default)]
@@ -163,6 +164,123 @@ struct StackFrame {
     elem: RawElement,
 }
 
+#[derive(PartialEq, Eq)]
+enum DocState {
+    Prolog,
+    InsideDocument,
+    Epilog,
+}
+
+pub fn is_xml_name_start_char(c: char) -> bool {
+    matches!(c,
+        ':' | 'A'..='Z' | '_' | 'a'..='z' |
+        '\u{C0}'..='\u{D6}' |
+        '\u{D8}'..='\u{F6}' |
+        '\u{F8}'..='\u{2FF}' |
+        '\u{370}'..='\u{37D}' |
+        '\u{37F}'..='\u{1FFF}' |
+        '\u{200C}'..='\u{200D}' |
+        '\u{2070}'..='\u{218F}' |
+        '\u{2C00}'..='\u{2FEF}' |
+        '\u{3001}'..='\u{D7FF}' |
+        '\u{F900}'..='\u{FDCF}' |
+        '\u{FDF0}'..='\u{FFFD}' |
+        '\u{10000}'..='\u{EFFFF}'
+    )
+}
+
+pub fn is_xml_name_char(c: char) -> bool {
+    is_xml_name_start_char(c)
+        || matches!(c,
+            '-' | '.' | '0'..='9' | '\u{B7}' |
+            '\u{0300}'..='\u{036F}' |
+            '\u{203F}'..='\u{2040}'
+        )
+}
+
+pub fn is_valid_xml_name(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) if is_xml_name_start_char(first) => chars.all(is_xml_name_char),
+        _ => false,
+    }
+}
+
+pub fn is_valid_xml_qname(s: &str) -> bool {
+    if let Some((prefix, local)) = s.split_once(':') {
+        !prefix.is_empty()
+            && !local.is_empty()
+            && is_valid_xml_name(prefix)
+            && is_valid_xml_name(local)
+    } else {
+        is_valid_xml_name(s)
+    }
+}
+
+pub fn is_xml_char(c: char) -> bool {
+    matches!(c as u32,
+        0x09 | 0x0A | 0x0D |
+        0x20..=0xD7FF |
+        0xE000..=0xFFFD |
+        0x10000..=0x10FFFF
+    )
+}
+
+fn normalize_xml_newlines(s: &str) -> String {
+    if !s.contains('\r') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\r' {
+            if chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            out.push('\n');
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn normalize_attribute_value(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\r' {
+            if chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            out.push(' ');
+        } else if c == '\n' || c == '\t' {
+            out.push(' ');
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn detect_declared_encoding(xml_bytes: &[u8]) -> Option<&'static encoding_rs::Encoding> {
+    if !xml_bytes.starts_with(b"<?xml") {
+        return None;
+    }
+    let end = xml_bytes.iter().position(|&b| b == b'>')?;
+    let header = std::str::from_utf8(&xml_bytes[..end]).ok()?;
+    let enc_start = header.find("encoding=")?;
+    let rest = &header[enc_start + 9..];
+    let quote = rest.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let rest = &rest[1..];
+    let enc_end = rest.find(quote)?;
+    let enc_name = &rest[..enc_end];
+    encoding_rs::Encoding::for_label(enc_name.as_bytes())
+}
+
 pub fn parse_xml_bytes(
     xml_bytes: &[u8],
     options: &ParseOptions,
@@ -171,13 +289,20 @@ pub fn parse_xml_bytes(
         return Err(SafeXmlError::InputSizeLimitExceeded(options.max_input_size));
     }
 
-    let mut reader = Reader::from_reader(xml_bytes);
+    let mut decoding_reader = DecodingReader::new(xml_bytes);
+    if let Some(enc) = detect_declared_encoding(xml_bytes) {
+        decoding_reader.set_encoding(enc);
+    }
+    let mut reader = Reader::from_reader(decoding_reader);
     let mut resolver = NamespaceResolver::default();
     let mut stack: Vec<StackFrame> = Vec::new();
     let mut root: Option<RawElement> = None;
     let mut buf = Vec::new();
     let mut total_text_bytes: usize = 0;
     let mut total_elements: usize = 0;
+    let mut state = DocState::Prolog;
+    let mut doctype_seen = false;
+    let mut default_attributes: Vec<AttlistDeclInfo> = Vec::new();
 
     loop {
         let event = match reader.read_event_into(&mut buf) {
@@ -186,7 +311,24 @@ pub fn parse_xml_bytes(
         };
 
         match event {
+            Event::Decl(decl) => {
+                if state != DocState::Prolog {
+                    return Err(SafeXmlError::ParseError(
+                        "XML declaration not allowed here".to_string(),
+                    ));
+                }
+                if let Some(encoding) = decl.encoder() {
+                    reader.get_mut().set_encoding(encoding);
+                }
+            }
             Event::DocType(dt) => {
+                if state != DocState::Prolog || doctype_seen {
+                    return Err(SafeXmlError::ParseError(
+                        "junk after document element: DOCTYPE declaration not allowed".to_string(),
+                    ));
+                }
+                doctype_seen = true;
+
                 let dt_str = dt.as_ref();
                 let info = doctype::parse_doctype(dt_str);
 
@@ -232,16 +374,41 @@ pub fn parse_xml_bytes(
                         },
                     )));
                 }
+
+                for ent in &info.entities {
+                    if let Some(val) = &ent.value {
+                        if val.len() > options.max_entity_size {
+                            return Err(SafeXmlError::ParseError(
+                                "Entity value exceeds max_entity_size".to_string(),
+                            ));
+                        }
+                    }
+                }
+
+                default_attributes = info.default_attributes;
             }
             Event::Start(start_event) => {
-                let name_bytes = start_event.name().into_inner();
-                if name_bytes.len() > options.max_name_size {
-                    return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+                if state == DocState::Epilog {
+                    return Err(SafeXmlError::ParseError(
+                        "junk after document element: multiple root elements".to_string(),
+                    ));
                 }
+                state = DocState::InsideDocument;
+
+                let name_bytes = start_event.name().into_inner();
                 if name_bytes.contains('\0') {
                     return Err(SafeXmlError::ParseError(
                         "Null byte detected in XML identifier".to_string(),
                     ));
+                }
+                if name_bytes.len() > options.max_name_size {
+                    return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+                }
+                if !is_valid_xml_qname(name_bytes) {
+                    return Err(SafeXmlError::ParseError(format!(
+                        "Illegal XML element name: {}",
+                        name_bytes
+                    )));
                 }
 
                 if stack.len() + 1 > options.max_depth {
@@ -253,12 +420,13 @@ pub fn parse_xml_bytes(
                     return Err(SafeXmlError::ElementLimitExceeded(options.max_elements));
                 }
 
-                if let Err(e) = resolver.push(&start_event) {
-                    return Err(SafeXmlError::ParseError(e.to_string()));
-                }
-
-                let tag = resolve_tag(&resolver, start_event.name());
-                let attrib = parse_attributes(&resolver, &start_event, options)?;
+                resolver.set_level(resolver.level() + 1);
+                let (tag, attrib) = process_element_and_attributes(
+                    &mut resolver,
+                    &start_event,
+                    options,
+                    &default_attributes,
+                )?;
 
                 stack.push(StackFrame {
                     elem: RawElement {
@@ -275,20 +443,33 @@ pub fn parse_xml_bytes(
                 if let Some(frame) = stack.pop() {
                     if stack.is_empty() {
                         root = Some(frame.elem);
+                        state = DocState::Epilog;
                     } else {
                         stack.last_mut().unwrap().elem.children.push(frame.elem);
                     }
                 }
             }
             Event::Empty(empty_event) => {
-                let name_bytes = empty_event.name().into_inner();
-                if name_bytes.len() > options.max_name_size {
-                    return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+                if state == DocState::Epilog {
+                    return Err(SafeXmlError::ParseError(
+                        "junk after document element: multiple root elements".to_string(),
+                    ));
                 }
+
+                let name_bytes = empty_event.name().into_inner();
                 if name_bytes.contains('\0') {
                     return Err(SafeXmlError::ParseError(
                         "Null byte detected in XML identifier".to_string(),
                     ));
+                }
+                if name_bytes.len() > options.max_name_size {
+                    return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+                }
+                if !is_valid_xml_qname(name_bytes) {
+                    return Err(SafeXmlError::ParseError(format!(
+                        "Illegal XML element name: {}",
+                        name_bytes
+                    )));
                 }
 
                 if stack.len() + 1 > options.max_depth {
@@ -300,12 +481,13 @@ pub fn parse_xml_bytes(
                     return Err(SafeXmlError::ElementLimitExceeded(options.max_elements));
                 }
 
-                if let Err(e) = resolver.push(&empty_event) {
-                    return Err(SafeXmlError::ParseError(e.to_string()));
-                }
-
-                let tag = resolve_tag(&resolver, empty_event.name());
-                let attrib = parse_attributes(&resolver, &empty_event, options)?;
+                resolver.set_level(resolver.level() + 1);
+                let (tag, attrib) = process_element_and_attributes(
+                    &mut resolver,
+                    &empty_event,
+                    options,
+                    &default_attributes,
+                )?;
                 resolver.pop();
 
                 let elem = RawElement {
@@ -318,45 +500,70 @@ pub fn parse_xml_bytes(
 
                 if stack.is_empty() {
                     root = Some(elem);
+                    state = DocState::Epilog;
                 } else {
                     stack.last_mut().unwrap().elem.children.push(elem);
                 }
             }
             Event::Comment(c) => {
-                if c.as_ref().len() > options.max_comment_size {
+                let c_str = c.as_ref();
+                if c_str.len() > options.max_comment_size {
                     return Err(SafeXmlError::CommentLimitExceeded(options.max_comment_size));
+                }
+                if c_str.contains("--") {
+                    return Err(SafeXmlError::ParseError(
+                        "Comment cannot contain '--'".to_string(),
+                    ));
                 }
             }
             Event::Text(t) => {
                 let text_str = t.as_ref();
-                append_text_chunk(
-                    &mut stack,
-                    &mut root,
-                    text_str,
-                    &mut total_text_bytes,
-                    options,
-                )?;
+                if state != DocState::InsideDocument {
+                    if !text_str.trim().is_empty() {
+                        if state == DocState::Epilog {
+                            return Err(SafeXmlError::ParseError(
+                                "Junk after document element".to_string(),
+                            ));
+                        } else {
+                            return Err(SafeXmlError::ParseError(
+                                "Content before document element".to_string(),
+                            ));
+                        }
+                    }
+                    continue;
+                }
+                if !text_str.chars().all(is_xml_char) {
+                    return Err(SafeXmlError::ParseError(
+                        "Invalid XML character in text".to_string(),
+                    ));
+                }
+                let normalized = normalize_xml_newlines(text_str);
+                append_text_chunk(&mut stack, &normalized, &mut total_text_bytes, options)?;
             }
             Event::CData(cd) => {
                 let cdata_str = cd.as_ref();
-                append_text_chunk(
-                    &mut stack,
-                    &mut root,
-                    cdata_str,
-                    &mut total_text_bytes,
-                    options,
-                )?;
+                if state != DocState::InsideDocument {
+                    return Err(SafeXmlError::ParseError(
+                        "CDATA not allowed outside document element".to_string(),
+                    ));
+                }
+                if !cdata_str.chars().all(is_xml_char) {
+                    return Err(SafeXmlError::ParseError(
+                        "Invalid XML character in CDATA".to_string(),
+                    ));
+                }
+                let normalized = normalize_xml_newlines(cdata_str);
+                append_text_chunk(&mut stack, &normalized, &mut total_text_bytes, options)?;
             }
             Event::GeneralRef(r) => {
+                if state != DocState::InsideDocument {
+                    return Err(SafeXmlError::ParseError(
+                        "Entity reference outside document element".to_string(),
+                    ));
+                }
                 let ref_str = r.as_ref();
                 let expanded = resolve_entity_reference(ref_str, options)?;
-                append_text_chunk(
-                    &mut stack,
-                    &mut root,
-                    &expanded,
-                    &mut total_text_bytes,
-                    options,
-                )?;
+                append_text_chunk(&mut stack, &expanded, &mut total_text_bytes, options)?;
             }
             Event::Eof => break,
             _ => {}
@@ -364,57 +571,160 @@ pub fn parse_xml_bytes(
         buf.clear();
     }
 
-    root.ok_or_else(|| SafeXmlError::ParseError("No XML root element found".to_string()))
-}
-
-fn resolve_tag(resolver: &NamespaceResolver, qname: QName) -> String {
-    let (res, local) = resolver.resolve_element(qname);
-    match res {
-        ResolveResult::Bound(ns) => format!("{{{}}}{}", ns.0, local.as_ref()),
-        ResolveResult::Unbound => local.as_ref().to_string(),
-        ResolveResult::Unknown(p) => format!("{}:{}", p, local.as_ref()),
+    if !stack.is_empty() {
+        return Err(SafeXmlError::ParseError(
+            "Unclosed element at end of document".to_string(),
+        ));
     }
+
+    if state != DocState::Epilog || root.is_none() {
+        return Err(SafeXmlError::ParseError(
+            "No XML root element found".to_string(),
+        ));
+    }
+
+    Ok(root.unwrap())
 }
 
-fn parse_attributes(
-    resolver: &NamespaceResolver,
+fn process_element_and_attributes(
+    resolver: &mut NamespaceResolver,
     event: &quick_xml::events::BytesStart,
     options: &ParseOptions,
-) -> Result<Vec<(String, String)>, SafeXmlError> {
-    let mut attrib = Vec::new();
+    default_attributes: &[AttlistDeclInfo],
+) -> Result<(String, Vec<(String, String)>), SafeXmlError> {
+    let mut total_attr_count = 0;
+
+    // 1. Process namespace declarations (xmlns and xmlns:*) and check attribute limits
     for attr in event.attributes() {
         let a = match attr {
             Ok(a) => a,
             Err(e) => return Err(SafeXmlError::ParseError(e.to_string())),
         };
 
-        let key_bytes = a.key.into_inner();
-        if key_bytes.len() > options.max_name_size {
-            return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+        total_attr_count += 1;
+        if total_attr_count > options.max_attributes {
+            return Err(SafeXmlError::AttributeLimitExceeded(options.max_attributes));
         }
+
+        let key_bytes = a.key.into_inner();
         if key_bytes.contains('\0') {
             return Err(SafeXmlError::ParseError(
                 "Null byte detected in XML identifier".to_string(),
             ));
         }
-
-        let key_str = a.key.as_ref();
-
-        // Standard ElementTree strips xmlns and xmlns:* declarations from element.attrib
-        if key_str == "xmlns" || key_str.starts_with("xmlns:") {
-            continue;
+        if key_bytes.len() > options.max_name_size {
+            return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+        }
+        if !is_valid_xml_qname(key_bytes) {
+            return Err(SafeXmlError::ParseError(format!(
+                "Illegal XML attribute name: {}",
+                key_bytes
+            )));
         }
 
-        if attrib.len() + 1 > options.max_attributes {
-            return Err(SafeXmlError::AttributeLimitExceeded(options.max_attributes));
+        let key_str = a.key.as_ref();
+        if key_str == "xmlns" || key_str.starts_with("xmlns:") {
+            let val_str = a.value.as_ref();
+            if val_str.len() > options.max_attribute_size {
+                return Err(SafeXmlError::AttributeSizeLimitExceeded(
+                    options.max_attribute_size,
+                ));
+            }
+            if val_str.contains('<') {
+                return Err(SafeXmlError::ParseError(
+                    "Attribute value contains unescaped '<'".to_string(),
+                ));
+            }
+            if !val_str.chars().all(is_xml_char) {
+                return Err(SafeXmlError::ParseError(
+                    "Invalid XML character in attribute value".to_string(),
+                ));
+            }
+
+            let normalized = normalize_attribute_value(val_str);
+            let unescaped = unescape_attribute_value(&normalized, options)?;
+
+            let binding = if key_str == "xmlns" {
+                PrefixDeclaration::Default
+            } else {
+                let prefix = &key_str[6..];
+                if prefix.is_empty() {
+                    return Err(SafeXmlError::ParseError(
+                        "Empty namespace prefix declaration".to_string(),
+                    ));
+                }
+                PrefixDeclaration::Named(prefix)
+            };
+
+            resolver
+                .add(binding, Namespace(&unescaped))
+                .map_err(|e| SafeXmlError::ParseError(e.to_string()))?;
+        }
+    }
+
+    // 2. Resolve tag
+    let (res, local) = resolver.resolve_element(event.name());
+    let tag = match res {
+        ResolveResult::Bound(ns) => format!("{{{}}}{}", ns.0, local.as_ref()),
+        ResolveResult::Unbound => {
+            if event.name().prefix().is_some() {
+                let p = event.name().prefix().unwrap();
+                return Err(SafeXmlError::ParseError(format!(
+                    "unbound prefix: {}",
+                    p.as_ref()
+                )));
+            }
+            local.as_ref().to_string()
+        }
+        ResolveResult::Unknown(p) => {
+            return Err(SafeXmlError::ParseError(format!("unbound prefix: {}", p)));
+        }
+    };
+    if tag.len() > options.max_name_size {
+        return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+    }
+
+    // 3. Process normal attributes
+    let mut attrib: Vec<(String, String)> = Vec::new();
+    for attr in event.attributes() {
+        let a = match attr {
+            Ok(a) => a,
+            Err(e) => return Err(SafeXmlError::ParseError(e.to_string())),
+        };
+
+        let key_str = a.key.as_ref();
+        if key_str == "xmlns" || key_str.starts_with("xmlns:") {
+            continue;
         }
 
         let (res, local) = resolver.resolve_attribute(a.key);
         let attr_name = match res {
             ResolveResult::Bound(ns) => format!("{{{}}}{}", ns.0, local.as_ref()),
-            ResolveResult::Unbound => local.as_ref().to_string(),
-            ResolveResult::Unknown(p) => format!("{}:{}", p, local.as_ref()),
+            ResolveResult::Unbound => {
+                if a.key.prefix().is_some() {
+                    let p = a.key.prefix().unwrap();
+                    return Err(SafeXmlError::ParseError(format!(
+                        "unbound prefix: {}",
+                        p.as_ref()
+                    )));
+                }
+                local.as_ref().to_string()
+            }
+            ResolveResult::Unknown(p) => {
+                return Err(SafeXmlError::ParseError(format!("unbound prefix: {}", p)));
+            }
         };
+
+        if attr_name.len() > options.max_name_size {
+            return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+        }
+
+        if attrib.iter().any(|(k, _)| k == &attr_name) {
+            return Err(SafeXmlError::ParseError(format!(
+                "duplicate attribute: {}",
+                attr_name
+            )));
+        }
 
         let val_str = a.value.as_ref();
         if val_str.len() > options.max_attribute_size {
@@ -422,51 +732,65 @@ fn parse_attributes(
                 options.max_attribute_size,
             ));
         }
+        if val_str.contains('<') {
+            return Err(SafeXmlError::ParseError(
+                "Attribute value contains unescaped '<'".to_string(),
+            ));
+        }
+        if !val_str.chars().all(is_xml_char) {
+            return Err(SafeXmlError::ParseError(
+                "Invalid XML character in attribute value".to_string(),
+            ));
+        }
 
-        // XML 1.0 Attribute-Value Normalization: literal whitespace (\r, \n, \t)
-        // is normalized to space (#x20) before unescaping character references.
-        let normalized_raw = if val_str.contains(['\r', '\n', '\t']) {
-            val_str
-                .chars()
-                .map(|c| {
-                    if c == '\r' || c == '\n' || c == '\t' {
-                        ' '
-                    } else {
-                        c
-                    }
-                })
-                .collect::<String>()
-        } else {
-            val_str.to_string()
-        };
+        let normalized = normalize_attribute_value(val_str);
+        let unescaped = unescape_attribute_value(&normalized, options)?;
 
-        let unescaped_val = match quick_xml::escape::unescape(&normalized_raw) {
-            Ok(u) => u.to_string(),
-            Err(quick_xml::escape::EscapeError::UnrecognizedEntity(_, ent_name)) => {
-                if options.forbid_entities {
-                    return Err(SafeXmlError::EntitiesForbidden(Box::new(
-                        EntityForbiddenDetails {
-                            name: ent_name.to_string(),
-                            value: None,
-                            base: None,
-                            sysid: None,
-                            pubid: None,
-                            notation_name: None,
-                        },
-                    )));
-                } else {
-                    return Err(SafeXmlError::ParseError(format!(
-                        "Unrecognized entity: &{};",
-                        ent_name
-                    )));
-                }
-            }
-            Err(e) => return Err(SafeXmlError::ParseError(e.to_string())),
-        };
-
-        attrib.push((attr_name, unescaped_val));
+        attrib.push((attr_name, unescaped));
     }
-    Ok(attrib)
+
+    // 4. Apply ATTLIST default attributes
+    let raw_elem_name = event.name().into_inner();
+    for d in default_attributes {
+        if (d.element_name == raw_elem_name || d.element_name == tag)
+            && !attrib.iter().any(|(k, _)| k == &d.attribute_name)
+        {
+            attrib.push((d.attribute_name.clone(), d.default_value.clone()));
+        }
+    }
+
+    Ok((tag, attrib))
+}
+
+fn unescape_attribute_value(val: &str, options: &ParseOptions) -> Result<String, SafeXmlError> {
+    if !val.contains('&') {
+        return Ok(val.to_string());
+    }
+
+    let mut out = String::with_capacity(val.len());
+    let mut i = 0;
+    let bytes = val.as_bytes();
+
+    while i < bytes.len() {
+        if bytes[i] == b'&' {
+            if let Some(semi) = val[i..].find(';') {
+                let ent_name = &val[i + 1..i + semi];
+                let resolved = resolve_entity_reference(ent_name, options)?;
+                out.push_str(&resolved);
+                i += semi + 1;
+            } else {
+                return Err(SafeXmlError::ParseError(
+                    "Unterminated entity reference in attribute value".to_string(),
+                ));
+            }
+        } else {
+            let next_char = val[i..].chars().next().unwrap();
+            out.push(next_char);
+            i += next_char.len_utf8();
+        }
+    }
+
+    Ok(out)
 }
 
 fn resolve_entity_reference(
@@ -479,21 +803,39 @@ fn resolve_entity_reference(
         "gt" => Ok(">".to_string()),
         "quot" => Ok("\"".to_string()),
         "apos" => Ok("'".to_string()),
-        num if num.starts_with("#x") || num.starts_with("#X") => {
+        num if num.starts_with("#X") => Err(SafeXmlError::ParseError(format!(
+            "Invalid uppercase character reference: &{};",
+            ref_name
+        ))),
+        num if num.starts_with("#x") => {
             let code = u32::from_str_radix(&num[2..], 16).map_err(|_| {
                 SafeXmlError::ParseError(format!("Invalid character reference: &{};", ref_name))
             })?;
-            char::from_u32(code).map(|c| c.to_string()).ok_or_else(|| {
+            let c = char::from_u32(code).ok_or_else(|| {
                 SafeXmlError::ParseError(format!("Invalid unicode character: &{};", ref_name))
-            })
+            })?;
+            if !is_xml_char(c) {
+                return Err(SafeXmlError::ParseError(format!(
+                    "Invalid XML character reference: &{};",
+                    ref_name
+                )));
+            }
+            Ok(c.to_string())
         }
         num if num.starts_with('#') => {
             let code = num[1..].parse::<u32>().map_err(|_| {
                 SafeXmlError::ParseError(format!("Invalid character reference: &{};", ref_name))
             })?;
-            char::from_u32(code).map(|c| c.to_string()).ok_or_else(|| {
+            let c = char::from_u32(code).ok_or_else(|| {
                 SafeXmlError::ParseError(format!("Invalid unicode character: &{};", ref_name))
-            })
+            })?;
+            if !is_xml_char(c) {
+                return Err(SafeXmlError::ParseError(format!(
+                    "Invalid XML character reference: &{};",
+                    ref_name
+                )));
+            }
+            Ok(c.to_string())
         }
         unknown => {
             if options.forbid_entities {
@@ -509,7 +851,7 @@ fn resolve_entity_reference(
                 )))
             } else {
                 Err(SafeXmlError::ParseError(format!(
-                    "Undefined entity: &{};",
+                    "Unrecognized entity: &{};",
                     unknown
                 )))
             }
@@ -519,7 +861,6 @@ fn resolve_entity_reference(
 
 fn append_text_chunk(
     stack: &mut [StackFrame],
-    root: &mut Option<RawElement>,
     chunk: &str,
     total_text_bytes: &mut usize,
     options: &ParseOptions,
@@ -530,17 +871,6 @@ fn append_text_chunk(
     }
 
     if stack.is_empty() {
-        if !chunk.trim().is_empty() {
-            if root.is_some() {
-                return Err(SafeXmlError::ParseError(
-                    "Junk after document element".to_string(),
-                ));
-            } else {
-                return Err(SafeXmlError::ParseError(
-                    "Content before document element".to_string(),
-                ));
-            }
-        }
         return Ok(());
     }
 
@@ -804,7 +1134,7 @@ mod tests {
     #[test]
     fn test_cdata_and_tail_and_entities() {
         let xml = br#"<root>
-            <child id="c1">Hello &amp; &lt; &gt; &quot; &apos; &#65; &#x42; &#X43; <![CDATA[raw <data>]]></child>
+            <child id="c1">Hello &amp; &lt; &gt; &quot; &apos; &#65; &#x42; &#x43; <![CDATA[raw <data>]]></child>
             Tail text here<![CDATA[ more tail]]>
         </root>"#;
         let opt = ParseOptions::default();
@@ -845,7 +1175,7 @@ mod tests {
 
         // Undefined entity with forbid_entities = false
         let err4 = parse_xml_bytes(b"<root>&custom;</root>", &opt).unwrap_err();
-        assert!(format!("{}", err4).contains("Undefined entity: &custom;"));
+        assert!(format!("{}", err4).contains("Unrecognized entity: &custom;"));
 
         // Undefined entity with forbid_entities = true
         let opt_forbid = ParseOptions::default();
@@ -872,14 +1202,10 @@ mod tests {
             ("regular".to_string(), "plain & simple".to_string())
         );
 
-        // Unknown namespace prefix
+        // Unknown namespace prefix must be rejected
         let xml_unk = br#"<unk:root unk:attr="val"/>"#;
-        let root_unk = parse_xml_bytes(xml_unk, &opt).unwrap();
-        assert_eq!(root_unk.tag, "unk:root");
-        assert_eq!(
-            root_unk.attrib[0],
-            ("unk:attr".to_string(), "val".to_string())
-        );
+        let err_unk = parse_xml_bytes(xml_unk, &opt).unwrap_err();
+        assert!(format!("{}", err_unk).contains("unbound prefix"));
 
         // Attribute with unknown entity when forbid_entities = true
         let xml_attr_ent = br#"<root attr="&unknown;"/>"#;
@@ -1044,6 +1370,8 @@ mod tests {
 
         // Escape error in attribute unescape
         let err10 = parse_xml_bytes(b"<root attr='&#x999999999999;'/>", &opt).unwrap_err();
-        assert!(format!("{}", err10).contains("invalid character reference"));
+        assert!(format!("{}", err10)
+            .to_lowercase()
+            .contains("invalid character reference"));
     }
 }
