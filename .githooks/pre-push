@@ -1,0 +1,40 @@
+#!/bin/sh
+set -e
+
+if [ -n "$USERPROFILE" ]; then
+    export PATH="$USERPROFILE/.rustup/toolchains/stable-x86_64-pc-windows-msvc/bin:$USERPROFILE/.cargo/bin:$PATH"
+fi
+if [ -n "$HOME" ]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+echo -e "${BLUE}[git-hook: pre-push]${NC} Running pre-push verification tests..."
+
+# 1. Rust Cargo Check & Tests
+echo -e "${BLUE}[1/2] Running Rust tests (cargo test)...${NC}"
+cargo test || {
+    echo -e "${RED}[FAIL] cargo test failed!${NC}"
+    exit 1
+}
+echo -e "${GREEN}[OK] Cargo tests passed.${NC}"
+
+# 2. Python Tests
+echo -e "${BLUE}[2/2] Running Python tests (pytest)...${NC}"
+if [ -f ".venv/bin/pytest" ]; then
+    .venv/bin/pytest || {
+        echo -e "${RED}[FAIL] pytest failed!${NC}"
+        exit 1
+    }
+    echo -e "${GREEN}[OK] Pytest passed.${NC}"
+elif command -v pytest >/dev/null 2>&1; then
+    pytest || exit 1
+    echo -e "${GREEN}[OK] Pytest passed.${NC}"
+fi
+
+echo -e "${GREEN}[git-hook: pre-push] All tests passed! Ready to push.${NC}"
+exit 0

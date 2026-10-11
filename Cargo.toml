@@ -1,0 +1,25 @@
+[package]
+name = "safexml"
+version = "0.1.0"
+edition = "2021"
+authors = ["Bailey Nguyen <bailey.tan.nguyen@gmail.com>"]
+license = "MIT"
+description = "High-performance, secure, modern XML parser and defused replacement built in Rust"
+repository = "https://github.com/polyxml/safexml"
+readme = "README.md"
+keywords = ["xml", "security", "defusedxml", "xxe", "parser"]
+
+[lib]
+name = "_safexml"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.29", features = ["abi3-py312", "extension-module"] }
+quick-xml = { version = "0.42", features = ["encoding"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+

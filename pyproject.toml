@@ -1,0 +1,75 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "safexml"
+version = "0.1.0"
+description = "High-performance, secure, modern XML parser and drop-in defusedxml replacement built in Rust"
+authors = [
+    { name = "Bailey Nguyen", email = "bailey.tan.nguyen@gmail.com" }
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Markup :: XML",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-benchmark>=5.0.0",
+    "ruff>=0.4.0",
+    "defusedxml>=0.7.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/polyxml/safexml"
+Documentation = "https://github.com/polyxml/safexml#readme"
+Repository = "https://github.com/polyxml/safexml"
+Issues = "https://github.com/polyxml/safexml/issues"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+python-source = "python"
+module-name = "safexml._safexml"
+strip = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--color=yes -v"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "B",
+    "UP",
+    "SIM",
+]
+ignore = [
+    "E501",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["safexml"]
+

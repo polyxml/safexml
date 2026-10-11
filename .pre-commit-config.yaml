@@ -1,0 +1,37 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ['--unsafe']
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^(python|tests)/
+      - id: ruff-format
+        files: ^(python|tests)/
+
+  - repo: local
+    hooks:
+      - id: version-parity
+        name: Version parity check (Cargo.toml vs pyproject.toml)
+        entry: python scripts/sync_version.py --check
+        language: system
+        pass_filenames: false
+        files: ^(Cargo\.toml|pyproject\.toml)$
+
+      - id: cargo-fmt
+        name: Rust format check (cargo fmt)
+        entry: cargo fmt --all -- --check
+        language: system
+        pass_filenames: false
+        files: \.rs$
