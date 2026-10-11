@@ -8,179 +8,292 @@ pub struct EntityDeclInfo {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct AttlistDeclInfo {
+    pub element_name: String,
+    pub attribute_name: String,
+    pub default_value: String,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct DocTypeInfo {
     pub name: String,
     pub system_id: Option<String>,
     pub public_id: Option<String>,
     pub has_internal_subset: bool,
     pub entities: Vec<EntityDeclInfo>,
+    pub default_attributes: Vec<AttlistDeclInfo>,
 }
 
-fn extract_quoted(s: &str, start_pos: usize) -> Option<(String, usize)> {
-    let bytes = s.as_bytes();
-    let mut i = start_pos;
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-        i += 1;
+struct StrScanner<'a> {
+    s: &'a str,
+    cursor: usize,
+}
+
+impl<'a> StrScanner<'a> {
+    fn new(s: &'a str) -> Self {
+        Self { s, cursor: 0 }
     }
-    if i >= bytes.len() {
+
+    fn is_eof(&self) -> bool {
+        self.cursor >= self.s.len()
+    }
+
+    fn remaining(&self) -> &'a str {
+        if self.cursor >= self.s.len() {
+            ""
+        } else {
+            &self.s[self.cursor..]
+        }
+    }
+
+    fn peek_char(&self) -> Option<char> {
+        self.remaining().chars().next()
+    }
+
+    fn next_char(&mut self) -> Option<char> {
+        if let Some(c) = self.peek_char() {
+            self.cursor += c.len_utf8();
+            Some(c)
+        } else {
+            None
+        }
+    }
+
+    fn skip_whitespace(&mut self) {
+        while let Some(c) = self.peek_char() {
+            if c.is_whitespace() {
+                self.next_char();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn starts_with(&self, prefix: &str) -> bool {
+        self.remaining().starts_with(prefix)
+    }
+
+    fn take_while<F: Fn(char) -> bool>(&mut self, f: F) -> &'a str {
+        let start = self.cursor;
+        while let Some(c) = self.peek_char() {
+            if f(c) {
+                self.next_char();
+            } else {
+                break;
+            }
+        }
+        &self.s[start..self.cursor]
+    }
+
+    fn expect_quoted(&mut self) -> Option<String> {
+        self.skip_whitespace();
+        let quote = self.peek_char()?;
+        if quote != '"' && quote != '\'' {
+            return None;
+        }
+        self.next_char(); // consume quote
+        let start = self.cursor;
+        while let Some(c) = self.peek_char() {
+            if c == quote {
+                let val = &self.s[start..self.cursor];
+                self.next_char(); // consume closing quote
+                return Some(val.to_string());
+            }
+            self.next_char();
+        }
+        None
+    }
+}
+
+pub fn extract_quoted(s: &str, start_pos: usize) -> Option<(String, usize)> {
+    if start_pos > s.len() || !s.is_char_boundary(start_pos) {
         return None;
     }
-    let quote = bytes[i];
-    if quote != b'"' && quote != b'\'' {
-        return None;
-    }
-    i += 1;
-    let val_start = i;
-    while i < bytes.len() && bytes[i] != quote {
-        i += 1;
-    }
-    if i >= bytes.len() {
-        return None;
-    }
-    let val = s[val_start..i].to_string();
-    Some((val, i + 1))
+    let mut scanner = StrScanner::new(s);
+    scanner.cursor = start_pos;
+    let val = scanner.expect_quoted()?;
+    Some((val, scanner.cursor))
 }
 
 pub fn parse_doctype(s: &str) -> DocTypeInfo {
-    let trimmed = s.trim();
+    let mut scanner = StrScanner::new(s);
+    scanner.skip_whitespace();
     let mut info = DocTypeInfo::default();
-    if trimmed.is_empty() {
+    if scanner.is_eof() {
         return info;
     }
 
     // Name is up to next whitespace or '[' or '>'
-    let name_end = trimmed
-        .find(|c: char| c.is_whitespace() || c == '[' || c == '>')
-        .unwrap_or(trimmed.len());
-    info.name = trimmed[..name_end].to_string();
+    info.name = scanner
+        .take_while(|c| !c.is_whitespace() && c != '[' && c != '>')
+        .to_string();
 
-    let rest = &trimmed[name_end..];
-    let mut i = 0;
-    let bytes = rest.as_bytes();
-
-    while i < bytes.len() {
-        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-            i += 1;
-        }
-        if i >= bytes.len() {
+    while !scanner.is_eof() {
+        scanner.skip_whitespace();
+        if scanner.is_eof() {
             break;
         }
 
-        if bytes[i] == b'[' {
+        if scanner.starts_with("[") {
             info.has_internal_subset = true;
             break;
         }
 
-        if rest[i..].starts_with("PUBLIC") {
-            i += 6;
-            if let Some((pub_id, next_i)) = extract_quoted(rest, i) {
+        if scanner.starts_with("PUBLIC") {
+            scanner.cursor += 6;
+            if let Some(pub_id) = scanner.expect_quoted() {
                 info.public_id = Some(pub_id);
-                i = next_i;
-                if let Some((sys_id, next_i2)) = extract_quoted(rest, i) {
+                if let Some(sys_id) = scanner.expect_quoted() {
                     info.system_id = Some(sys_id);
-                    i = next_i2;
                 }
             }
-        } else if rest[i..].starts_with("SYSTEM") {
-            i += 6;
-            if let Some((sys_id, next_i)) = extract_quoted(rest, i) {
+        } else if scanner.starts_with("SYSTEM") {
+            scanner.cursor += 6;
+            if let Some(sys_id) = scanner.expect_quoted() {
                 info.system_id = Some(sys_id);
-                i = next_i;
             }
         } else {
-            i += 1;
+            scanner.next_char();
         }
     }
 
     // Parse internal subset if present
-    if let Some(subset_start) = trimmed.find('[') {
+    if let Some(subset_start) = s.find('[') {
         info.has_internal_subset = true;
-        if let Some(subset_end) = trimmed.rfind(']') {
-            let subset = &trimmed[subset_start + 1..subset_end];
-            parse_internal_subset(subset, &mut info.entities);
+        if let Some(subset_end) = s.rfind(']') {
+            if subset_start < subset_end {
+                let subset = &s[subset_start + 1..subset_end];
+                parse_internal_subset(subset, &mut info.entities, &mut info.default_attributes);
+            }
         }
     }
 
     info
 }
 
-fn parse_internal_subset(subset: &str, entities: &mut Vec<EntityDeclInfo>) {
-    let mut search_pos = 0;
-    while let Some(ent_pos) = subset[search_pos..].find("<!ENTITY") {
-        let abs_pos = search_pos + ent_pos + 8;
-        let rest = &subset[abs_pos..];
-        let mut i = 0;
-        let bytes = rest.as_bytes();
-
-        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-            i += 1;
-        }
-        // Check for parameter entity '%'
-        if i < bytes.len() && bytes[i] == b'%' {
-            i += 1;
-            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-                i += 1;
-            }
+fn parse_internal_subset(
+    subset: &str,
+    entities: &mut Vec<EntityDeclInfo>,
+    default_attrs: &mut Vec<AttlistDeclInfo>,
+) {
+    let mut scanner = StrScanner::new(subset);
+    while !scanner.is_eof() {
+        scanner.skip_whitespace();
+        if scanner.is_eof() {
+            break;
         }
 
-        // Read entity name
-        let name_start = i;
-        while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'>' {
-            i += 1;
-        }
-        let entity_name = rest[name_start..i].to_string();
-
-        let mut entity = EntityDeclInfo {
-            name: entity_name,
-            ..Default::default()
-        };
-
-        while i < bytes.len() && bytes[i] != b'>' {
-            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-                i += 1;
-            }
-            if i >= bytes.len() || bytes[i] == b'>' {
+        if scanner.starts_with("<!--") {
+            // Comment in internal subset - skip it
+            scanner.cursor += 4;
+            if let Some(end) = scanner.remaining().find("-->") {
+                scanner.cursor += end + 3;
+            } else {
                 break;
             }
+        } else if scanner.starts_with("<!ENTITY") {
+            scanner.cursor += 8;
+            scanner.skip_whitespace();
 
-            if rest[i..].starts_with("SYSTEM") {
-                i += 6;
-                if let Some((sys_id, next_i)) = extract_quoted(rest, i) {
-                    entity.system_id = Some(sys_id);
-                    i = next_i;
-                }
-            } else if rest[i..].starts_with("PUBLIC") {
-                i += 6;
-                if let Some((pub_id, next_i)) = extract_quoted(rest, i) {
-                    entity.public_id = Some(pub_id);
-                    i = next_i;
-                    if let Some((sys_id, next_i2)) = extract_quoted(rest, i) {
-                        entity.system_id = Some(sys_id);
-                        i = next_i2;
-                    }
-                }
-            } else if bytes[i] == b'"' || bytes[i] == b'\'' {
-                if let Some((val, next_i)) = extract_quoted(rest, i) {
-                    entity.value = Some(val);
-                    i = next_i;
-                }
-            } else if rest[i..].starts_with("NDATA") {
-                i += 5;
-                while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-                    i += 1;
-                }
-                let not_start = i;
-                while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'>' {
-                    i += 1;
-                }
-                entity.notation = Some(rest[not_start..i].to_string());
-            } else {
-                i += 1;
+            // Check for parameter entity '%'
+            if scanner.starts_with("%") {
+                scanner.cursor += 1;
+                scanner.skip_whitespace();
             }
-        }
 
-        entities.push(entity);
-        search_pos = abs_pos + i;
+            let entity_name = scanner
+                .take_while(|c| !c.is_whitespace() && c != '>' && c != '[')
+                .to_string();
+
+            let mut entity = EntityDeclInfo {
+                name: entity_name,
+                ..Default::default()
+            };
+
+            while !scanner.is_eof() && !scanner.starts_with(">") {
+                scanner.skip_whitespace();
+                if scanner.is_eof() || scanner.starts_with(">") {
+                    break;
+                }
+
+                if scanner.starts_with("SYSTEM") {
+                    scanner.cursor += 6;
+                    if let Some(sys_id) = scanner.expect_quoted() {
+                        entity.system_id = Some(sys_id);
+                    }
+                } else if scanner.starts_with("PUBLIC") {
+                    scanner.cursor += 6;
+                    if let Some(pub_id) = scanner.expect_quoted() {
+                        entity.public_id = Some(pub_id);
+                        if let Some(sys_id) = scanner.expect_quoted() {
+                            entity.system_id = Some(sys_id);
+                        }
+                    }
+                } else if scanner.starts_with("\"") || scanner.starts_with("'") {
+                    if let Some(val) = scanner.expect_quoted() {
+                        entity.value = Some(val);
+                    }
+                } else if scanner.starts_with("NDATA") {
+                    scanner.cursor += 5;
+                    scanner.skip_whitespace();
+                    let not_name = scanner
+                        .take_while(|c| !c.is_whitespace() && c != '>')
+                        .to_string();
+                    entity.notation = Some(not_name);
+                } else {
+                    scanner.next_char();
+                }
+            }
+
+            if scanner.starts_with(">") {
+                scanner.next_char();
+            }
+
+            entities.push(entity);
+        } else if scanner.starts_with("<!ATTLIST") {
+            scanner.cursor += 9;
+            scanner.skip_whitespace();
+            let elem_name = scanner
+                .take_while(|c| !c.is_whitespace() && c != '>')
+                .to_string();
+            scanner.skip_whitespace();
+            let attr_name = scanner
+                .take_while(|c| !c.is_whitespace() && c != '>')
+                .to_string();
+            scanner.skip_whitespace();
+            // attribute type (e.g. CDATA, ID, etc.)
+            let _attr_type = scanner
+                .take_while(|c| !c.is_whitespace() && c != '>')
+                .to_string();
+            scanner.skip_whitespace();
+
+            if scanner.starts_with("#FIXED") {
+                scanner.cursor += 6;
+                scanner.skip_whitespace();
+            }
+
+            if scanner.starts_with("#REQUIRED") || scanner.starts_with("#IMPLIED") {
+                // no default
+            } else if let Some(val) = scanner.expect_quoted() {
+                if !elem_name.is_empty() && !attr_name.is_empty() {
+                    default_attrs.push(AttlistDeclInfo {
+                        element_name: elem_name,
+                        attribute_name: attr_name,
+                        default_value: val,
+                    });
+                }
+            }
+
+            // advance to '>'
+            while !scanner.is_eof() && !scanner.starts_with(">") {
+                scanner.next_char();
+            }
+            if scanner.starts_with(">") {
+                scanner.next_char();
+            }
+        } else {
+            scanner.next_char();
+        }
     }
 }
 
@@ -277,5 +390,20 @@ mod tests {
         // DTD with trailing whitespace
         let d_spaces = parse_doctype("root   ");
         assert_eq!(d_spaces.name, "root");
+
+        // Unicode DTD and entities in comments must not panic
+        let d_unicode = parse_doctype("r é");
+        assert_eq!(d_unicode.name, "r");
+
+        let d_comment = parse_doctype("r [<!-- <!ENTITY fake é> -->]");
+        assert_eq!(d_comment.name, "r");
+        assert_eq!(d_comment.entities.len(), 0);
+
+        // ATTLIST default attribute
+        let d_att = parse_doctype(r#"r [<!ATTLIST r role CDATA "user">]"#);
+        assert_eq!(d_att.default_attributes.len(), 1);
+        assert_eq!(d_att.default_attributes[0].element_name, "r");
+        assert_eq!(d_att.default_attributes[0].attribute_name, "role");
+        assert_eq!(d_att.default_attributes[0].default_value, "user");
     }
 }

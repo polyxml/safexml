@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
+from collections import deque
 from typing import IO, Any
 from xml.dom import minidom as _stdlib_minidom
-from xml.etree import ElementTree as _stdlib_etree
 
 from safexml import ElementTree as _safexml_etree
 
@@ -13,9 +13,31 @@ Document = _stdlib_minidom.Document
 Node = _stdlib_minidom.Node
 Element = _stdlib_minidom.Element
 
-# Retain references to original stdlib implementations to avoid recursion when monkey-patched.
-_orig_minidom_parse = _stdlib_minidom.parse
-_orig_minidom_parseString = _stdlib_minidom.parseString
+
+def _etree_to_minidom(root: _safexml_etree.Element) -> _stdlib_minidom.Document:
+    doc = _stdlib_minidom.Document()
+    doc_root = doc.createElement(root.tag)
+    for k, v in root.attrib.items():
+        doc_root.setAttribute(k, v)
+    if root.text:
+        doc_root.appendChild(doc.createTextNode(root.text))
+    doc.appendChild(doc_root)
+
+    queue: deque[tuple[_safexml_etree.Element, _stdlib_minidom.Element]] = deque([(root, doc_root)])
+    while queue:
+        parent_etree, parent_dom = queue.popleft()
+        for child in parent_etree:
+            child_dom = doc.createElement(child.tag)
+            for k, v in child.attrib.items():
+                child_dom.setAttribute(k, v)
+            if child.text:
+                child_dom.appendChild(doc.createTextNode(child.text))
+            parent_dom.appendChild(child_dom)
+            if child.tail:
+                parent_dom.appendChild(doc.createTextNode(child.tail))
+            queue.append((child, child_dom))
+
+    return doc
 
 
 def parse(
@@ -40,9 +62,7 @@ def parse(
         max_elements=max_elements,
         max_input_size=max_input_size,
     )
-    root = tree.getroot()
-    xml_bytes = _stdlib_etree.tostring(root, encoding="utf-8")
-    return _orig_minidom_parseString(xml_bytes)
+    return _etree_to_minidom(tree.getroot())
 
 
 def parseString(
@@ -66,8 +86,7 @@ def parseString(
         max_elements=max_elements,
         max_input_size=max_input_size,
     )
-    xml_bytes = _stdlib_etree.tostring(root, encoding="utf-8")
-    return _orig_minidom_parseString(xml_bytes)
+    return _etree_to_minidom(root)
 
 
 __all__ = [

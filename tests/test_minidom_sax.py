@@ -50,13 +50,15 @@ class LoggingContentHandler(ContentHandler):
 
 def test_minidom_parse_string() -> None:
     """safexml.minidom.parseString parses safe XML into a standard minidom Document."""
-    doc = minidom.parseString("<root><item id='1'>hello</item></root>")
+    doc = minidom.parseString("<root><item id='1'>hello</item>tail<empty/></root>")
     assert isinstance(doc, minidom.Document)
     assert isinstance(doc, std_minidom.Document)
     assert doc.documentElement.tagName == "root"
     child = doc.documentElement.firstChild
     assert child.getAttribute("id") == "1"
     assert child.firstChild.data == "hello"
+    assert doc.documentElement.childNodes[1].data == "tail"
+    assert doc.documentElement.childNodes[2].tagName == "empty"
 
     # Bytes input
     doc_bytes = minidom.parseString(b"<data key='val'>sample</data>", parser=None)
@@ -207,6 +209,11 @@ def test_defuse_stdlib_full_mapping() -> None:
     """safexml.defuse_stdlib patches ElementTree, minidom, and sax, and returns a dictionary."""
     orig_et_fromstring = std_ET.fromstring
     orig_et_parse = std_ET.parse
+    orig_et_iterparse = std_ET.iterparse
+    orig_et_XML = std_ET.XML
+    orig_et_XMLParser = std_ET.XMLParser
+    orig_et_fromstringlist = getattr(std_ET, "fromstringlist", None)
+    orig_et_ElementTree_parse = std_ET.ElementTree.parse
     orig_minidom_parse = std_minidom.parse
     orig_minidom_parsestr = std_minidom.parseString
     orig_sax_parse = std_sax.parse
@@ -242,6 +249,12 @@ def test_defuse_stdlib_full_mapping() -> None:
     finally:
         std_ET.fromstring = orig_et_fromstring
         std_ET.parse = orig_et_parse
+        std_ET.iterparse = orig_et_iterparse
+        std_ET.XML = orig_et_XML
+        std_ET.XMLParser = orig_et_XMLParser
+        if orig_et_fromstringlist is not None:
+            std_ET.fromstringlist = orig_et_fromstringlist
+        std_ET.ElementTree.parse = orig_et_ElementTree_parse
         std_minidom.parse = orig_minidom_parse
         std_minidom.parseString = orig_minidom_parsestr
         std_sax.parse = orig_sax_parse

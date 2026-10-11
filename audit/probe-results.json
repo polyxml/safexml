@@ -1,0 +1,443 @@
+{
+  "multiple_roots": {
+    "safe": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "junk after document element: multiple root elements"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "junk after document element: line 1, column 9"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "junk after document element: line 1, column 9"
+    }
+  },
+  "unclosed_after_root": {
+    "safe": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "junk after document element: multiple root elements"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "junk after document element: line 1, column 9"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "junk after document element: line 1, column 9"
+    }
+  },
+  "unbound_prefix": {
+    "safe": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "unbound prefix: p"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "unbound prefix: line 1, column 0"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "unbound prefix: line 1, column 0"
+    }
+  },
+  "duplicate_expanded_attribute": {
+    "safe": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "duplicate attribute: {urn:x}id"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "duplicate attribute: line 1, column 0"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "duplicate attribute: line 1, column 0"
+    }
+  },
+  "illegal_name": {
+    "safe": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "Illegal XML element name: 1root"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "not well-formed (invalid token): line 1, column 1"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "not well-formed (invalid token): line 1, column 1"
+    }
+  },
+  "illegal_text_char": {
+    "safe": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "Invalid XML character in text"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "not well-formed (invalid token): line 1, column 3"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "not well-formed (invalid token): line 1, column 3"
+    }
+  },
+  "illegal_numeric_char": {
+    "safe": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "Invalid XML character reference: &#0;"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "reference to invalid character number: line 1, column 3"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "reference to invalid character number: line 1, column 3"
+    }
+  },
+  "uppercase_hex": {
+    "safe": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "Invalid uppercase character reference: &#X41;"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "not well-formed (invalid token): line 1, column 5"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "not well-formed (invalid token): line 1, column 5"
+    }
+  },
+  "raw_lt_attribute": {
+    "safe": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "Attribute value contains unescaped '<'"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "not well-formed (invalid token): line 1, column 6"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "not well-formed (invalid token): line 1, column 6"
+    }
+  },
+  "bad_comment": {
+    "safe": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "Comment cannot contain '--'"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "not well-formed (invalid token): line 1, column 10"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "not well-formed (invalid token): line 1, column 10"
+    }
+  },
+  "line_endings": {
+    "safe": {
+      "accepted": true,
+      "tag": "r",
+      "text": "a\nb\nc",
+      "attrs": {},
+      "children": 0
+    },
+    "defused": {
+      "accepted": true,
+      "tag": "r",
+      "text": "a\nb\nc",
+      "attrs": {},
+      "children": 0
+    },
+    "stdlib": {
+      "accepted": true,
+      "tag": "r",
+      "text": "a\nb\nc",
+      "attrs": {},
+      "children": 0
+    }
+  },
+  "attribute_crlf": {
+    "safe": {
+      "accepted": true,
+      "tag": "r",
+      "text": null,
+      "attrs": {
+        "a": "a b"
+      },
+      "children": 0
+    },
+    "defused": {
+      "accepted": true,
+      "tag": "r",
+      "text": null,
+      "attrs": {
+        "a": "a b"
+      },
+      "children": 0
+    },
+    "stdlib": {
+      "accepted": true,
+      "tag": "r",
+      "text": null,
+      "attrs": {
+        "a": "a b"
+      },
+      "children": 0
+    }
+  },
+  "namespace_entity": {
+    "safe": {
+      "accepted": true,
+      "tag": "{urn:a&b}r",
+      "text": null,
+      "attrs": {},
+      "children": 0
+    },
+    "defused": {
+      "accepted": true,
+      "tag": "{urn:a&b}r",
+      "text": null,
+      "attrs": {},
+      "children": 0
+    },
+    "stdlib": {
+      "accepted": true,
+      "tag": "{urn:a&b}r",
+      "text": null,
+      "attrs": {},
+      "children": 0
+    }
+  },
+  "latin1": {
+    "safe": {
+      "accepted": true,
+      "tag": "r",
+      "text": "\u00e9",
+      "attrs": {},
+      "children": 0
+    },
+    "defused": {
+      "accepted": true,
+      "tag": "r",
+      "text": "\u00e9",
+      "attrs": {},
+      "children": 0
+    },
+    "stdlib": {
+      "accepted": true,
+      "tag": "r",
+      "text": "\u00e9",
+      "attrs": {},
+      "children": 0
+    }
+  },
+  "utf16": {
+    "safe": {
+      "accepted": true,
+      "tag": "r",
+      "text": "hello",
+      "attrs": {},
+      "children": 0
+    },
+    "defused": {
+      "accepted": true,
+      "tag": "r",
+      "text": "hello",
+      "attrs": {},
+      "children": 0
+    },
+    "stdlib": {
+      "accepted": true,
+      "tag": "r",
+      "text": "hello",
+      "attrs": {},
+      "children": 0
+    }
+  },
+  "dtd_default_attr": {
+    "safe": {
+      "accepted": true,
+      "tag": "r",
+      "text": null,
+      "attrs": {
+        "role": "user"
+      },
+      "children": 0
+    },
+    "defused": {
+      "accepted": true,
+      "tag": "r",
+      "text": null,
+      "attrs": {
+        "role": "user"
+      },
+      "children": 0
+    },
+    "stdlib": {
+      "accepted": true,
+      "tag": "r",
+      "text": null,
+      "attrs": {
+        "role": "user"
+      },
+      "children": 0
+    }
+  },
+  "entity_in_comment": {
+    "safe": {
+      "accepted": true,
+      "tag": "r",
+      "text": null,
+      "attrs": {},
+      "children": 0
+    },
+    "defused": {
+      "accepted": true,
+      "tag": "r",
+      "text": null,
+      "attrs": {},
+      "children": 0
+    },
+    "stdlib": {
+      "accepted": true,
+      "tag": "r",
+      "text": null,
+      "attrs": {},
+      "children": 0
+    }
+  },
+  "unknown_entity_namespace": {
+    "safe": {
+      "accepted": false,
+      "exception": "EntitiesForbidden",
+      "message": "EntitiesForbidden(name='evil', system_id=None, public_id=None)"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "undefined entity: line 1, column 0"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "undefined entity: line 1, column 0"
+    }
+  },
+  "doctype_after_root": {
+    "safe": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "junk after document element: DOCTYPE declaration not allowed"
+    },
+    "defused": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "junk after document element: line 1, column 4"
+    },
+    "stdlib": {
+      "accepted": false,
+      "exception": "ParseError",
+      "message": "junk after document element: line 1, column 4"
+    }
+  },
+  "isolated": {
+    "unicode_dtd": {
+      "exit": 0,
+      "stderr": ""
+    },
+    "unicode_entity_token": {
+      "exit": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/bailey/github/safexml/python/safexml/ElementTree.py\", line 178, in fromstring\n    return _parse_xml(\n           ^^^^^^^^^^^\nsafexml.common.EntitiesForbidden: EntitiesForbidden(name='e', system_id=None, public_id=None)\n"
+    },
+    "valid_comment_dtd_panic": {
+      "exit": 0,
+      "stderr": ""
+    },
+    "unterminated_entity_quote": {
+      "exit": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/home/bailey/github/safexml/python/safexml/ElementTree.py\", line 178, in fromstring\n    return _parse_xml(\n           ^^^^^^^^^^^\nsafexml.common.ParseError: syntax error: DOCTYPE not closed: `>` not found before end of input\n"
+    },
+    "valid_deep_default": {
+      "exit": 0,
+      "stderr": ""
+    }
+  },
+  "namespace_limits": {
+    "accepted": false,
+    "exception": "DefusedXmlException",
+    "message": "XML element exceeded maximum attribute count limit of 0"
+  },
+  "entity_limit": {
+    "accepted": false,
+    "exception": "ParseError",
+    "message": "Entity value exceeds max_entity_size"
+  },
+  "namespace_amplification": {
+    "exception": "DefusedXmlException",
+    "message": "XML element exceeded maximum attribute count limit of 0"
+  },
+  "deep_wrappers": {
+    "iterparse": "accepted",
+    "sax": "accepted",
+    "minidom": "accepted"
+  },
+  "parser_is_safe": {
+    "class": "safexml.ElementTree"
+  },
+  "parser_expands_entity": "blocked: EntitiesForbidden",
+  "parse_error_identity": true,
+  "custom_target": {
+    "accepted": true,
+    "tag": "r",
+    "text": null,
+    "attrs": {},
+    "children": 0
+  },
+  "short_read": {
+    "exception": "DefusedXmlException"
+  },
+  "iterparse": {
+    "namespace_events": [],
+    "has_root": true
+  },
+  "defuse_stdlib": {
+    "class_parse": "blocked: EntitiesForbidden",
+    "fromstringlist": "blocked: EntitiesForbidden"
+  }
+}

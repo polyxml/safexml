@@ -180,5 +180,80 @@ def test_exception_representations_and_fields() -> None:
     assert repr(ext) == "ExternalReferenceForbidden(system_id='file:///etc/passwd', public_id=None)"
     assert ext.sysid == "file:///etc/passwd"
 
+    err = ParseError("syntax error")
+    assert repr(err) == "ParseError('syntax error')"
+    assert str(err) == "syntax error"
+    assert issubclass(ParseError, std_ET.ParseError)
     assert issubclass(NotSupportedError, DefusedXmlException)
     assert issubclass(ParseError, DefusedXmlException)
+
+
+def test_xmlparser_lifecycle_and_defusedxmlparser_alias() -> None:
+    """XMLParser supports feed()/close() for strings and bytes, enforces limits, and aliases DefusedXMLParser."""
+    import pytest
+
+    from safexml.common import EntitiesForbidden, ParseError
+
+    assert safe_ET.DefusedXMLParser is safe_ET.XMLParser
+
+    # Feed string
+    parser = safe_ET.XMLParser()
+    parser.feed("<root>")
+    parser.feed("<item>hello</item>")
+    parser.feed("</root>")
+    root = parser.close()
+    assert root.tag == "root"
+    assert root[0].text == "hello"
+
+    # Feed bytes
+    parser_bytes = safe_ET.XMLParser()
+    parser_bytes.feed(b"<catalog>")
+    parser_bytes.feed(b"<item>data</item>")
+    parser_bytes.feed(b"</catalog>")
+    root_b = parser_bytes.close()
+    assert root_b.tag == "catalog"
+    assert root_b[0].text == "data"
+
+    # Close with no data
+    empty_parser = safe_ET.XMLParser()
+    with pytest.raises(ParseError, match="No XML root element"):
+        empty_parser.close()
+
+    # Security enforcement via XMLParser
+    sec_parser = safe_ET.XMLParser()
+    sec_parser.feed('<!DOCTYPE bomb [<!ENTITY a "123">]><bomb>&a;</bomb>')
+    with pytest.raises(EntitiesForbidden):
+        sec_parser.close()
+
+
+def test_iterparse_root_property() -> None:
+    """iterparse provides .root property pointing to the document root element."""
+    xml = "<catalog><book id='1'>Text</book></catalog>"
+    it = safe_ET.iterparse(io.StringIO(xml))
+    assert hasattr(it, "root")
+    assert it.root.tag == "catalog"
+    events = list(it)
+    assert len(events) == 2
+
+
+def test_character_encoding_support() -> None:
+    """Parser decodes declared ISO-8859-1 and UTF-16 encodings correctly."""
+    # ISO-8859-1
+    iso_xml = b'<?xml version="1.0" encoding="ISO-8859-1"?><doc>\xe9l\xe9phant</doc>'
+    root_iso = safe_ET.fromstring(iso_xml)
+    assert root_iso.tag == "doc"
+    assert root_iso.text == "\u00e9l\u00e9phant"
+
+    # UTF-16 with BOM
+    utf16_xml = '<?xml version="1.0" encoding="utf-16"?><msg>hello</msg>'.encode("utf-16")
+    root_u16 = safe_ET.fromstring(utf16_xml)
+    assert root_u16.tag == "msg"
+    assert root_u16.text == "hello"
+
+
+def test_dtd_default_attributes_application() -> None:
+    """DTD ATTLIST default attributes are applied when not explicitly specified on elements."""
+    xml = '<!DOCTYPE r [<!ATTLIST r role CDATA "guest" status CDATA "active">]><r status="admin"/>'
+    root = safe_ET.fromstring(xml)
+    assert root.attrib["role"] == "guest"
+    assert root.attrib["status"] == "admin"

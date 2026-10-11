@@ -6,6 +6,8 @@ and improved exception formatting for `rich` tracebacks.
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as _stdlib_etree
+
 
 class DefusedXmlException(ValueError):
     """Base exception for all XML security violations in safexml."""
@@ -100,8 +102,15 @@ class NotSupportedError(DefusedXmlException):
     """The requested operation or XML feature is not supported."""
 
 
-class ParseError(DefusedXmlException):
+class ParseError(_stdlib_etree.ParseError, DefusedXmlException):
     """Raised when XML syntax parsing fails."""
+
+    def __init__(self, message: str = "XML parse error") -> None:
+        super().__init__(message)
+        self.message = message
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.message!r})"
 
 
 __all__ = [

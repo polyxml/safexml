@@ -17,15 +17,21 @@ from xml.sax.xmlreader import AttributesImpl, XMLReader
 from safexml import ElementTree as _safexml_etree
 
 
-def _walk_element(elem: _safexml_etree.Element, handler: ContentHandler) -> None:
-    handler.startElement(elem.tag, AttributesImpl(elem.attrib))
-    if elem.text:
-        handler.characters(elem.text)
-    for child in elem:
-        _walk_element(child, handler)
-        if child.tail:
-            handler.characters(child.tail)
-    handler.endElement(elem.tag)
+def _walk_element(root: _safexml_etree.Element, handler: ContentHandler) -> None:
+    stack: list[tuple[_safexml_etree.Element, bool, str | None]] = [(root, False, None)]
+    while stack:
+        elem, visited, tail = stack.pop()
+        if visited:
+            handler.endElement(elem.tag)
+            if tail:
+                handler.characters(tail)
+        else:
+            handler.startElement(elem.tag, AttributesImpl(elem.attrib))
+            if elem.text:
+                handler.characters(elem.text)
+            stack.append((elem, True, tail))
+            for child in reversed(elem):
+                stack.append((child, False, child.tail))
 
 
 class SafeXMLParser(XMLReader):
