@@ -34,6 +34,12 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install dependencies and build safexml
+        run: uv pip install --system -e ".[dev]"
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 

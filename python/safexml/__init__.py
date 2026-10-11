@@ -9,7 +9,6 @@ from __future__ import annotations
 from xml.etree import ElementTree as _stdlib_etree
 
 from safexml import ElementTree
-from safexml._safexml import version as _rust_version
 from safexml.common import (
     DefusedXmlException,
     DTDForbidden,
@@ -40,7 +39,12 @@ from safexml.ElementTree import (
     tostringlist,
 )
 
-__version__ = _rust_version()
+try:
+    from safexml._safexml import version as _rust_version
+
+    __version__ = _rust_version()
+except ImportError:  # pragma: no cover
+    __version__ = "1.0.2"
 
 
 def defuse_stdlib() -> None:

@@ -37,7 +37,16 @@ from xml.etree.ElementTree import (
     ElementTree as _StdlibElementTree,
 )
 
-from safexml._safexml import parse_xml as _parse_xml
+try:
+    from safexml._safexml import parse_xml as _parse_xml
+except ImportError:  # pragma: no cover
+
+    def _parse_xml(*args: Any, **kwargs: Any) -> Any:
+        raise ImportError(
+            "The safexml Rust extension module '_safexml' is not compiled or installed."
+        )
+
+
 from safexml.common import (
     DefusedXmlException,
     DTDForbidden,
