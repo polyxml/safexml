@@ -25,17 +25,16 @@ You will receive an acknowledgment within 48 hours and regular updates on the mi
 
 ## OSV Schema Compliance & Advisory Publishing
 
-All security advisories published by `safexml` strictly conform to the **[Open Source Vulnerability (OSV) Schema v1.6.0+](https://ossf.github.io/osv-schema/)** defined by the Open Source Security Foundation (OpenSSF) and Google:
+Security advisories for `safexml` are published via [GitHub Security Advisories (GHSA)](https://github.com/polyxml/safexml/security/advisories), which publishes entries conforming to the **[Open Source Vulnerability (OSV) Schema](https://ossf.github.io/osv-schema/)**:
 
-- **Ecosystem Identification:** Advisories are registered under ecosystem `PyPI` for package `safexml` and `crates.io` for `safexml-core`.
-- **Machine-Readable Metadata:** Published advisories include precise semantic version ranges (`introduced`, `fixed`), commit SHAs, and reproducible proof-of-concept test cases.
-- **Vulnerability Databases:** Advisories are syndicated directly to:
-  - [GitHub Advisory Database (GHSA)](https://github.com/polyxml/safexml/security/advisories)
+- **Ecosystem:** Advisories are published under the `PyPI` ecosystem for package `safexml`.
+- **Machine-Readable Metadata:** Advisories provide structured package identification, semantic version ranges (`introduced`, `fixed`), and references.
+- **Vulnerability Databases:** Advisories flow automatically into:
   - [Google Open Source Vulnerability Database (OSV.dev)](https://osv.dev/list?ecosystem=PyPI&q=safexml)
   - Downstream vulnerability scanners including `pip-audit`, `osv-scanner`, `trivy`, and `dependabot`.
-- **CWE Classifications:** Each advisory explicitly maps to Common Weakness Enumeration identifiers:
+- **CWE Classifications:** Advisories map to appropriate Common Weakness Enumeration identifiers:
   - **CWE-611:** Improper Restriction of XML External Entity Reference (XXE)
-  - **CWE-776:** Improper Restriction of Recursive Entity References in DTDs (XML Entity Expansion / Billion Laughs)
-  - **CWE-400:** Uncontrolled Resource Consumption (Quadratic Blowup & Hash Collision DOS)
-  - **CWE-827:** Improper Control of Generation of Code / Document Type Definition
+  - **CWE-776:** Improper Restriction of Recursive Entity References in DTDs (XML Entity Expansion)
+  - **CWE-400:** Uncontrolled Resource Consumption
+  - **CWE-827:** Improper Control of Document Type Definition
 

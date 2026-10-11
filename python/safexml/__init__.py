@@ -9,6 +9,7 @@ from __future__ import annotations
 from xml.etree import ElementTree as _stdlib_etree
 
 from safexml import ElementTree
+from safexml._safexml import version as _rust_version
 from safexml.common import (
     DefusedXmlException,
     DTDForbidden,
@@ -39,19 +40,13 @@ from safexml.ElementTree import (
     tostringlist,
 )
 
-try:
-    from safexml._safexml import version as _rust_version
-
-    __version__ = _rust_version()
-except ImportError:  # pragma: no cover
-    __version__ = "1.0.2"
+__version__ = _rust_version()
 
 
 def defuse_stdlib() -> None:
     """Safely patch standard library `xml.etree.ElementTree` to use safexml parsers.
 
-    Unlike legacy defusedxml (which broke openpyxl and xmlschema per tiran/defusedxml#76, #77, #88),
-    safexml preserves all standard library attributes and Element class identities.
+    Preserves standard library attributes and Element class identities.
     """
     _stdlib_etree.fromstring = fromstring
     _stdlib_etree.parse = parse

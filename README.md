@@ -35,7 +35,9 @@ When parsing XML inside high-concurrency web frameworks (FastAPI, Django, Flask,
 
 ### 3. Defeats Modern XML Attacks That `defusedxml` Misses
 `defusedxml` only guards against traditional DTD and entity expansions. It completely misses modern XML attack vectors:
-- **Attribute Flood / Attribute Hash DoS (CWE-400)**: Attackers submit elements with 100,000 attributes. `defusedxml` constructs a massive Python dictionary, causing quadratic hash collisions and OOM. **SafeXML enforces `max_attributes` (default 1,000).**
+- **Input Size Bounding (CWE-400)**: Unbounded source streams exhaust host memory before parsing completes. **SafeXML enforces `max_input_size` (default 256MB) with bounded reading.**
+- **Element Count Bounding (CWE-400)**: Millions of sibling elements bypass recursion depth limits. **SafeXML enforces `max_elements` (default 5,000,000).**
+- **Attribute Flood / Attribute Hash DoS (CWE-400)**: Attackers submit elements with 100,000 attributes. `defusedxml` constructs a massive Python dictionary, causing quadratic memory overhead. **SafeXML enforces `max_attributes` (default 1,000).**
 - **Giant Attribute Value Bombs (CWE-400)**: A single 50MB attribute value crashes memory. `defusedxml` does not inspect attribute lengths. **SafeXML enforces `max_attribute_size` (default 10MB).**
 - **Comment Amplification Bombs**: Millions of comments or giant comment streams exhaust parser memory. **SafeXML enforces `max_comment_size` (default 10MB).**
 - **Tag Name Memory Bombs**: Gigantic element tag names consume unbounded memory during string interning. **SafeXML enforces `max_name_size` (default 1,024 chars).**
@@ -51,17 +53,18 @@ When parsing XML inside high-concurrency web frameworks (FastAPI, Django, Flask,
 | **Quadratic Blowup Entity Attack** | 🛡️ **BLOCKED** | 🛡️ **BLOCKED** | ⚠️ Config-dependent | ❌ **VULNERABLE** |
 | **External Entity (XXE) / SSRF** | 🛡️ **BLOCKED** | 🛡️ **BLOCKED** | ⚠️ Config-dependent | ❌ **VULNERABLE** |
 | **External DTD Retrieval** | 🛡️ **BLOCKED** | 🛡️ **BLOCKED** | ⚠️ Config-dependent | ❌ **VULNERABLE** |
-| **Attribute Flood / Hash DoS (CWE-400)** | 🛡️ **BLOCKED** (`max_attributes`) | ❌ **VULNERABLE** | ❌ **VULNERABLE** | ❌ **VULNERABLE** |
+| **Document Size Bounding** | 🛡️ **BLOCKED** (`max_input_size`) | ❌ Unbounded read | ⚠️ Config-dependent | ❌ Unbounded read |
+| **Element Count Bounding** | 🛡️ **BLOCKED** (`max_elements`) | ❌ Unbounded | ❌ Unbounded | ❌ Unbounded |
+| **Attribute Flood / Memory DoS (CWE-400)** | 🛡️ **BLOCKED** (`max_attributes`) | ❌ **VULNERABLE** | ❌ **VULNERABLE** | ❌ **VULNERABLE** |
 | **Giant Attribute Value Bomb (CWE-400)** | 🛡️ **BLOCKED** (`max_attribute_size`) | ❌ **VULNERABLE** | ❌ **VULNERABLE** | ❌ **VULNERABLE** |
 | **Tag Name Memory Bomb** | 🛡️ **BLOCKED** (`max_name_size`) | ❌ **VULNERABLE** | ❌ **VULNERABLE** | ❌ **VULNERABLE** |
 | **Comment Amplification Bomb** | 🛡️ **BLOCKED** (`max_comment_size`) | ❌ **VULNERABLE** | ❌ **VULNERABLE** | ❌ **VULNERABLE** |
 | **Null Byte Identifier Injection** | 🛡️ **BLOCKED** | ❌ Truncated / Allowed | ❌ Truncated / Allowed | ❌ Truncated / Allowed |
 | **Immune to C-Level Memory Corruption** | 🛡️ **YES (Safe Rust)** | ❌ No (`libexpat` CVEs) | ❌ No (`libxml2` CVEs) | ❌ No (`libexpat` CVEs) |
 | **Releases Python GIL (Parallel Scaling)** | ⚡ **YES (`py.detach`)** | ❌ No (Blocks GIL) | ⚠️ Partial | ❌ No (Blocks GIL) |
-| **Test Coverage Enforced** | 🎯 **100.00% Coverage** | Unknown / Partial | Unknown / Partial | N/A |
-| **PEP 561 Type Annotations (`py.typed`)** | ✅ **YES** | ❌ No ([#104](https://github.com/tiran/defusedxml/issues/104)) | ⚠️ Separate stub | ⚠️ Standard library |
-| **Rich / IPython Traceback Compatible** | ✅ **YES** | ❌ Crashes ([#105](https://github.com/tiran/defusedxml/issues/105)) | ✅ Yes | ✅ Yes |
-| **ElementTree `indent()` Built-in** | ✅ **YES** | ❌ Missing ([#87](https://github.com/tiran/defusedxml/issues/87)) | ✅ Yes | ✅ Yes |
+| **PEP 561 Type Annotations (`py.typed`)** | ✅ **YES** | ❌ No | ⚠️ Separate stub | ⚠️ Standard library |
+| **Rich / Structured Logging Compatible** | ✅ **YES** | ❌ Missing args | ✅ Yes | ✅ Yes |
+| **ElementTree `indent()` Built-in** | ✅ **YES** | ❌ Missing | ✅ Yes | ✅ Yes |
 | **Modern Python Target** | 🐍 **Python >= 3.12** | 🏚️ Python 2 / Legacy | 🐍 All | 🐍 Standard library |
 
 ---
@@ -96,17 +99,17 @@ Under `concurrent.futures.ThreadPoolExecutor` simulating concurrent API requests
 
 ---
 
-## 🛠️ Upstream `defusedxml` Issues Resolved
+## ✨ Modern Standard Library Compatibility & Developer Ergonomics
 
-`safexml` directly resolves the top open issues and long-standing bugs reported against `tiran/defusedxml`:
+`safexml` provides complete compatibility with Python's standard `xml.etree.ElementTree` while delivering modern developer ergonomics:
 
-- **[tiran/defusedxml#105](https://github.com/tiran/defusedxml/issues/105)**: Exception formatting crashed when printed by `rich` tracebacks due to missing `args`. SafeXML properly populates `super().__init__(msg)`.
-- **[tiran/defusedxml#104](https://github.com/tiran/defusedxml/issues/104)**: Complete lack of PEP 561 typing. SafeXML ships with `py.typed` and comprehensive type annotations.
-- **[tiran/defusedxml#87](https://github.com/tiran/defusedxml/issues/87)**: Missing `xml.etree.ElementTree.indent()`. Full support provided.
-- **[tiran/defusedxml#80](https://github.com/tiran/defusedxml/issues/80)**: Missing `Element` class export. Re-exported directly.
-- **[tiran/defusedxml#79](https://github.com/tiran/defusedxml/issues/79)**: Missing `register_namespace()` helper. Fully supported.
-- **[tiran/defusedxml#78](https://github.com/tiran/defusedxml/issues/78)**: `fromstring()` rejected `parser=` keyword argument. Standard signature parity supported.
-- **[tiran/defusedxml#76](https://github.com/tiran/defusedxml/issues/76), [#77](https://github.com/tiran/defusedxml/issues/77), [#88](https://github.com/tiran/defusedxml/issues/88)**: `defuse_stdlib()` monkeypatching broke `openpyxl` and `xmlschema`. Safe, non-destructive stdlib defuser implemented.
+- **Structured Tracebacks**: All exceptions populate standard `args` and `message` properties, rendering cleanly in `rich`, IPython, and logging pipelines.
+- **PEP 561 Typing**: Ships with inline `py.typed` markers and comprehensive type annotations for `mypy` and `pyright`.
+- **ElementTree `indent()`**: Full support for XML pretty-printing and tree indentation matching Python 3.9+ standard library APIs.
+- **Element Class Re-export**: `Element` is exported directly from `safexml.ElementTree` and top-level `safexml`.
+- **Namespace Registration**: `register_namespace()` is supported for deterministic namespace prefix serialization.
+- **Signature Parity**: `fromstring()` accepts standard library keyword arguments including `parser=`.
+- **Non-Destructive Defusing**: `defuse_stdlib()` patches standard library parsers without breaking third-party libraries (e.g. `openpyxl`, `xmlschema`) or corrupting `Element` identity.
 
 ---
 

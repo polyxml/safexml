@@ -2,14 +2,6 @@
 
 Compatible with `defusedxml.ElementTree` and `xml.etree.ElementTree`.
 Powered by Rust (`quick-xml`) with GIL release and strict entity/DoS defense.
-
-Resolves legacy defusedxml issues:
-- tiran/defusedxml#78: `fromstring()` supports `parser` keyword argument.
-- tiran/defusedxml#79: Exposes `register_namespace()`.
-- tiran/defusedxml#80: Exposes `Element` class.
-- tiran/defusedxml#87: Exposes `indent()` for pretty-printing.
-- tiran/defusedxml#104: Comprehensive type annotations and PEP 561 marker.
-- tiran/defusedxml#105: Exception tracebacks compatible with `rich`.
 """
 
 from __future__ import annotations
@@ -37,16 +29,7 @@ from xml.etree.ElementTree import (
     ElementTree as _StdlibElementTree,
 )
 
-try:
-    from safexml._safexml import parse_xml as _parse_xml
-except ImportError:  # pragma: no cover
-
-    def _parse_xml(*args: Any, **kwargs: Any) -> Any:
-        raise ImportError(
-            "The safexml Rust extension module '_safexml' is not compiled or installed."
-        )
-
-
+from safexml._safexml import parse_xml as _parse_xml
 from safexml.common import (
     DefusedXmlException,
     DTDForbidden,
@@ -84,6 +67,8 @@ class ElementTree(_StdlibElementTree):
         max_attribute_size: int = 10 * 1024 * 1024,
         max_name_size: int = 1024,
         max_comment_size: int = 10 * 1024 * 1024,
+        max_input_size: int = 256 * 1024 * 1024,
+        max_elements: int = 5_000_000,
     ) -> Element:
         root = parse(
             source=source,
@@ -98,6 +83,8 @@ class ElementTree(_StdlibElementTree):
             max_attribute_size=max_attribute_size,
             max_name_size=max_name_size,
             max_comment_size=max_comment_size,
+            max_input_size=max_input_size,
+            max_elements=max_elements,
         ).getroot()
         self._setroot(root)
         return root
@@ -116,6 +103,8 @@ def fromstring(
     max_attribute_size: int = 10 * 1024 * 1024,
     max_name_size: int = 1024,
     max_comment_size: int = 10 * 1024 * 1024,
+    max_input_size: int = 256 * 1024 * 1024,
+    max_elements: int = 5_000_000,
 ) -> Element:
     """Parse XML from string or bytes with strict security defenses.
 
@@ -132,6 +121,8 @@ def fromstring(
         max_attribute_size: Maximum allowed size per attribute in bytes (default 10MB).
         max_name_size: Maximum allowed element tag or attribute name length (default 1024).
         max_comment_size: Maximum allowed XML comment size in bytes (default 10MB).
+        max_input_size: Maximum allowed input size in bytes (default 256MB).
+        max_elements: Maximum total elements in the document (default 5,000,000).
 
     Returns:
         The root `xml.etree.ElementTree.Element`.
@@ -148,6 +139,8 @@ def fromstring(
         max_attribute_size=max_attribute_size,
         max_name_size=max_name_size,
         max_comment_size=max_comment_size,
+        max_input_size=max_input_size,
+        max_elements=max_elements,
     )
 
 
@@ -167,29 +160,46 @@ def parse(
     max_attribute_size: int = 10 * 1024 * 1024,
     max_name_size: int = 1024,
     max_comment_size: int = 10 * 1024 * 1024,
+    max_input_size: int = 256 * 1024 * 1024,
+    max_elements: int = 5_000_000,
 ) -> ElementTree:
     """Parse an XML document from a filepath or file-like object into an ElementTree."""
     if isinstance(source, (str, bytes, os.PathLike)):
         with open(source, "rb") as f:
-            content = f.read()
+            root = _parse_xml(
+                f,
+                forbid_dtd=forbid_dtd,
+                forbid_entities=forbid_entities,
+                forbid_external=forbid_external,
+                max_depth=max_depth,
+                max_entity_size=max_entity_size,
+                max_text_size=max_text_size,
+                max_attributes=max_attributes,
+                max_attribute_size=max_attribute_size,
+                max_name_size=max_name_size,
+                max_comment_size=max_comment_size,
+                max_input_size=max_input_size,
+                max_elements=max_elements,
+            )
     elif hasattr(source, "read"):
-        content = source.read()
+        root = _parse_xml(
+            source,
+            forbid_dtd=forbid_dtd,
+            forbid_entities=forbid_entities,
+            forbid_external=forbid_external,
+            max_depth=max_depth,
+            max_entity_size=max_entity_size,
+            max_text_size=max_text_size,
+            max_attributes=max_attributes,
+            max_attribute_size=max_attribute_size,
+            max_name_size=max_name_size,
+            max_comment_size=max_comment_size,
+            max_input_size=max_input_size,
+            max_elements=max_elements,
+        )
     else:
         raise TypeError(f"Invalid source type for parse(): {type(source).__name__}")
 
-    root = _parse_xml(
-        content,
-        forbid_dtd=forbid_dtd,
-        forbid_entities=forbid_entities,
-        forbid_external=forbid_external,
-        max_depth=max_depth,
-        max_entity_size=max_entity_size,
-        max_text_size=max_text_size,
-        max_attributes=max_attributes,
-        max_attribute_size=max_attribute_size,
-        max_name_size=max_name_size,
-        max_comment_size=max_comment_size,
-    )
     tree = ElementTree()
     tree._setroot(root)
     return tree
@@ -209,6 +219,8 @@ def iterparse(
     max_attribute_size: int = 10 * 1024 * 1024,
     max_name_size: int = 1024,
     max_comment_size: int = 10 * 1024 * 1024,
+    max_input_size: int = 256 * 1024 * 1024,
+    max_elements: int = 5_000_000,
 ) -> Iterator[tuple[str, Element]]:
     """Incrementally parse an XML document, yielding (event, elem) pairs safely.
 
@@ -228,6 +240,8 @@ def iterparse(
         max_attribute_size=max_attribute_size,
         max_name_size=max_name_size,
         max_comment_size=max_comment_size,
+        max_input_size=max_input_size,
+        max_elements=max_elements,
     )
     root = tree.getroot()
 

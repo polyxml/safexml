@@ -56,7 +56,7 @@ Changelog = "https://github.com/polyxml/safexml/releases"
 "Security Advisories" = "https://github.com/polyxml/safexml/security/advisories"
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
+features = ["extension-module"]
 python-source = "python"
 module-name = "safexml._safexml"
 strip = true

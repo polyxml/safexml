@@ -24,6 +24,10 @@ pub struct ParseOptions {
     pub max_attribute_size: usize,
     pub max_name_size: usize,
     pub max_comment_size: usize,
+    /// Maximum size of the raw input document in bytes.
+    pub max_input_size: usize,
+    /// Maximum total number of elements in the document.
+    pub max_elements: usize,
 }
 
 impl Default for ParseOptions {
@@ -39,6 +43,8 @@ impl Default for ParseOptions {
             max_attribute_size: 10 * 1024 * 1024,
             max_name_size: 1024,
             max_comment_size: 10 * 1024 * 1024,
+            max_input_size: 256 * 1024 * 1024,
+            max_elements: 5_000_000,
         }
     }
 }
@@ -73,6 +79,8 @@ pub enum SafeXmlError {
     AttributeSizeLimitExceeded(usize),
     NameLimitExceeded(usize),
     CommentLimitExceeded(usize),
+    InputSizeLimitExceeded(usize),
+    ElementLimitExceeded(usize),
     ParseError(String),
 }
 
@@ -130,6 +138,20 @@ impl std::fmt::Display for SafeXmlError {
             SafeXmlError::CommentLimitExceeded(limit) => {
                 write!(f, "XML comment exceeded maximum size limit of {}", limit)
             }
+            SafeXmlError::InputSizeLimitExceeded(limit) => {
+                write!(
+                    f,
+                    "XML input exceeded maximum size limit of {} bytes",
+                    limit
+                )
+            }
+            SafeXmlError::ElementLimitExceeded(limit) => {
+                write!(
+                    f,
+                    "XML document exceeded maximum element count limit of {}",
+                    limit
+                )
+            }
             SafeXmlError::ParseError(msg) => write!(f, "XML ParseError: {}", msg),
         }
     }
@@ -145,12 +167,17 @@ pub fn parse_xml_bytes(
     xml_bytes: &[u8],
     options: &ParseOptions,
 ) -> Result<RawElement, SafeXmlError> {
+    if xml_bytes.len() > options.max_input_size {
+        return Err(SafeXmlError::InputSizeLimitExceeded(options.max_input_size));
+    }
+
     let mut reader = Reader::from_reader(xml_bytes);
     let mut resolver = NamespaceResolver::default();
     let mut stack: Vec<StackFrame> = Vec::new();
     let mut root: Option<RawElement> = None;
     let mut buf = Vec::new();
     let mut total_text_bytes: usize = 0;
+    let mut total_elements: usize = 0;
 
     loop {
         let event = match reader.read_event_into(&mut buf) {
@@ -221,6 +248,11 @@ pub fn parse_xml_bytes(
                     return Err(SafeXmlError::DepthLimitExceeded(options.max_depth));
                 }
 
+                total_elements += 1;
+                if total_elements > options.max_elements {
+                    return Err(SafeXmlError::ElementLimitExceeded(options.max_elements));
+                }
+
                 if let Err(e) = resolver.push(&start_event) {
                     return Err(SafeXmlError::ParseError(e.to_string()));
                 }
@@ -261,6 +293,11 @@ pub fn parse_xml_bytes(
 
                 if stack.len() + 1 > options.max_depth {
                     return Err(SafeXmlError::DepthLimitExceeded(options.max_depth));
+                }
+
+                total_elements += 1;
+                if total_elements > options.max_elements {
+                    return Err(SafeXmlError::ElementLimitExceeded(options.max_elements));
                 }
 
                 if let Err(e) = resolver.push(&empty_event) {
@@ -634,6 +671,52 @@ mod tests {
         };
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
         assert!(matches!(err, SafeXmlError::CommentLimitExceeded(10)));
+    }
+
+    #[test]
+    fn test_input_size_limit() {
+        let xml = b"<root>0123456789</root>";
+        let at_limit = ParseOptions {
+            max_input_size: xml.len(),
+            ..Default::default()
+        };
+        assert!(parse_xml_bytes(xml, &at_limit).is_ok());
+
+        let below = ParseOptions {
+            max_input_size: xml.len() - 1,
+            ..Default::default()
+        };
+        let err = parse_xml_bytes(xml, &below).unwrap_err();
+        assert!(matches!(err, SafeXmlError::InputSizeLimitExceeded(_)));
+        assert!(err
+            .to_string()
+            .contains("input exceeded maximum size limit"));
+    }
+
+    #[test]
+    fn test_element_count_limit() {
+        // root + 3 empty children + 1 start/end child = 5 elements
+        let xml = b"<root><a/><a/><a/><b></b></root>";
+        let at_limit = ParseOptions {
+            max_elements: 5,
+            ..Default::default()
+        };
+        assert!(parse_xml_bytes(xml, &at_limit).is_ok());
+
+        let empty_over = ParseOptions {
+            max_elements: 3,
+            ..Default::default()
+        };
+        let err = parse_xml_bytes(xml, &empty_over).unwrap_err();
+        assert!(matches!(err, SafeXmlError::ElementLimitExceeded(3)));
+        assert!(err.to_string().contains("element count limit"));
+
+        let start_over = ParseOptions {
+            max_elements: 4,
+            ..Default::default()
+        };
+        let err = parse_xml_bytes(xml, &start_over).unwrap_err();
+        assert!(matches!(err, SafeXmlError::ElementLimitExceeded(4)));
     }
 
     #[test]

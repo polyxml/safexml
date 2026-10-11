@@ -211,3 +211,32 @@ def test_cdata_accumulation_limit() -> None:
     # Allowed when below limit
     root = ET.fromstring(xml, max_text_size=1000)
     assert root.text == "C" * 500
+
+
+def test_max_input_size_limit() -> None:
+    """Input size bounding must reject oversized payloads from strings and streams."""
+    xml = "<root><item>Hello World</item></root>"
+    # Rejection on string
+    with pytest.raises(DefusedXmlException, match="input exceeded maximum size limit"):
+        ET.fromstring(xml, max_input_size=10)
+
+    # Allowed when below limit
+    root = ET.fromstring(xml, max_input_size=100)
+    assert root.tag == "root"
+
+    # Rejection on file-like stream
+    stream = io.BytesIO(xml.encode("utf-8"))
+    with pytest.raises(DefusedXmlException, match="input exceeded maximum size limit"):
+        ET.parse(stream, max_input_size=10)
+
+
+def test_max_elements_limit() -> None:
+    """Element count bounding must prevent sibling element expansion DoS."""
+    xml = "<root><a/><b/><c/><d/><e/></root>"
+    # Total 6 elements (<root>, <a>, <b>, <c>, <d>, <e>)
+    with pytest.raises(DefusedXmlException, match="element count limit"):
+        ET.fromstring(xml, max_elements=4)
+
+    # Allowed when below or equal to limit
+    root = ET.fromstring(xml, max_elements=6)
+    assert len(root) == 5
