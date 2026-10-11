@@ -27,7 +27,7 @@ When contributing or refactoring, strictly maintain the following invariants:
 2. **Drop-in Compatibility with `defusedxml.ElementTree` & `xml.etree.ElementTree`**:
    - Returns standard `xml.etree.ElementTree.Element` instances to maintain 100% compatibility with libraries like `pysaml2`, `python3-saml`, `openpyxl`, `python-docx`, `feedparser`, `botocore`.
    - Re-exports standard ElementTree symbols (`Element`, `SubElement`, `Comment`, `PI`, `indent`, `register_namespace`, `dump`, `tostring`, `tostringlist`).
-   - Signature parity: `fromstring(text, parser=None, forbid_dtd=False, forbid_entities=True, forbid_external=True, ...)` must accept `parser` keyword argument (resolving `tiran/defusedxml#78`).
+   - Signature parity: `fromstring(text, parser=None, forbid_dtd=False, forbid_entities=True, forbid_external=True, ...)` must accept `parser` keyword argument.
 
 3. **True GIL Detachment in Rust**:
    - All tokenization, XML scanning, DTD validation, and entity checking in Rust must execute outside the Python GIL using `py.detach(|| ...)` to allow multi-threaded Python servers (FastAPI, Django, Celery, gunicorn) to parse XML concurrently without blocking.
@@ -37,16 +37,15 @@ When contributing or refactoring, strictly maintain the following invariants:
    - **XXE (XML External Entity)**: Reject `SYSTEM` and `PUBLIC` references when `forbid_external=True` (`ExternalReferenceForbidden`).
    - **DTD Injections**: Reject `<!DOCTYPE>` declarations when `forbid_dtd=True` (`DTDForbidden`).
    - **Nesting Depth Limit**: Enforce `max_depth` (default 1,000) to protect against stack exhaustion.
-   - **Size Limits**: Enforce `max_text_size` and `max_entity_size` to prevent memory exhaustion attacks.
+   - **Size Limits**: Enforce `max_text_size`, `max_entity_size`, `max_input_size`, and `max_elements` to prevent memory exhaustion attacks.
 
-5. **Upstream Issue Fixes**:
-   - Maintain the fixes for tracked upstream issues:
-     - `tiran/defusedxml#105`: Exception formatting for `rich` tracebacks.
-     - `tiran/defusedxml#104`: PEP 561 `py.typed` marker and full type annotations.
-     - `tiran/defusedxml#87`: Standard `ElementTree.indent()` support.
-     - `tiran/defusedxml#80`: Direct `Element` class export.
-     - `tiran/defusedxml#79`: `register_namespace()` support.
-     - `tiran/defusedxml#76`, `#77`, `#88`: Safe `defuse_stdlib()` without breaking 3rd-party libs.
+5. **Modern Developer Ergonomics**:
+   - Exception formatting for `rich` tracebacks.
+   - PEP 561 `py.typed` marker and full type annotations.
+   - Standard `ElementTree.indent()` support.
+   - Direct `Element` class export.
+   - `register_namespace()` support.
+   - Safe `defuse_stdlib()` without breaking 3rd-party libs.
 
 ---
 

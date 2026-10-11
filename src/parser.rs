@@ -423,7 +423,24 @@ fn parse_attributes(
             ));
         }
 
-        let unescaped_val = match quick_xml::escape::unescape(val_str) {
+        // XML 1.0 Attribute-Value Normalization: literal whitespace (\r, \n, \t)
+        // is normalized to space (#x20) before unescaping character references.
+        let normalized_raw = if val_str.contains(['\r', '\n', '\t']) {
+            val_str
+                .chars()
+                .map(|c| {
+                    if c == '\r' || c == '\n' || c == '\t' {
+                        ' '
+                    } else {
+                        c
+                    }
+                })
+                .collect::<String>()
+        } else {
+            val_str.to_string()
+        };
+
+        let unescaped_val = match quick_xml::escape::unescape(&normalized_raw) {
             Ok(u) => u.to_string(),
             Err(quick_xml::escape::EscapeError::UnrecognizedEntity(_, ent_name)) => {
                 if options.forbid_entities {

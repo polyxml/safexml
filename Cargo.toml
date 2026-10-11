@@ -18,7 +18,7 @@ pyo3 = { version = "0.29", features = ["abi3-py312"], optional = true }
 quick-xml = { version = "0.42", features = ["encoding"] }
 
 [features]
-default = ["extension-module"]
+default = []
 # PyO3 bindings. Disable default features to get the pure-Rust parser only
 # (used by the fuzz targets, which must not link libpython).
 python = ["dep:pyo3"]

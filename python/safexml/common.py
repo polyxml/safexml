@@ -1,7 +1,7 @@
 """Common exceptions and constants for safexml.
 
 Drop-in compatible with `defusedxml.common`, with fixes for modern Python (>=3.12)
-and improved exception formatting for `rich` tracebacks (resolving tiran/defusedxml#105).
+and improved exception formatting for `rich` tracebacks.
 """
 
 from __future__ import annotations

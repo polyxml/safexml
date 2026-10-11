@@ -49,6 +49,9 @@ jobs:
       - name: Run Rust tests
         run: cargo test --no-default-features
 
+      - name: Verify fuzz target
+        run: cargo check --manifest-path fuzz/Cargo.toml
+
   python-test:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
     needs: rust-check

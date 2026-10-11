@@ -143,23 +143,43 @@ root = ET.fromstring("<catalog><item id='1'>Safe XML</item></catalog>")
 print(root.tag)               # "catalog"
 print(root[0].text)           # "Safe XML"
 
-# Pretty-printing (resolves tiran/defusedxml#87)
+# Built-in pretty-printing
 ET.indent(root)
 print(ET.tostring(root, encoding="unicode"))
 ```
 
-### 2. Global Non-Destructive Stdlib Defusing
+### 2. Drop-in Replacement for `defusedxml.minidom` and `defusedxml.sax`
 
-If you have third-party dependencies (like `openpyxl`, `boto3`, or `saml2`) using Python's standard `xml.etree.ElementTree`, you can secure your entire application with one call:
+```python
+# minidom drop-in
+from safexml import minidom
+
+doc = minidom.parseString("<catalog><item id='1'>Safe XML</item></catalog>")
+print(doc.documentElement.tagName)  # "catalog"
+
+# SAX drop-in
+from safexml import sax
+from xml.sax.handler import ContentHandler
+
+class CustomHandler(ContentHandler):
+    def startElement(self, name, attrs):
+        print(f"Element: {name}")
+
+sax.parseString("<root><item/></root>", CustomHandler())
+```
+
+### 3. Global Non-Destructive Stdlib Defusing
+
+If you have third-party dependencies (like `openpyxl`, `boto3`, or `saml2`) using Python's standard `xml.etree.ElementTree`, `xml.dom.minidom`, or `xml.sax`, you can secure your entire application runtime with one call:
 
 ```python
 import safexml
 
-# Safely patches xml.etree.ElementTree without breaking third-party packages
+# Safely patches xml.etree.ElementTree, xml.dom.minidom, and xml.sax
 safexml.defuse_stdlib()
 ```
 
-### 3. Catching Security Violations
+### 4. Catching Security Violations
 
 ```python
 import safexml.ElementTree as ET
