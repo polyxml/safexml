@@ -71,6 +71,10 @@ class ElementTree(_StdlibElementTree):
         max_depth: int = 1000,
         max_entity_size: int = 10 * 1024 * 1024,
         max_text_size: int = 100 * 1024 * 1024,
+        max_attributes: int = 1000,
+        max_attribute_size: int = 10 * 1024 * 1024,
+        max_name_size: int = 1024,
+        max_comment_size: int = 10 * 1024 * 1024,
     ) -> Element:
         root = parse(
             source=source,
@@ -81,6 +85,10 @@ class ElementTree(_StdlibElementTree):
             max_depth=max_depth,
             max_entity_size=max_entity_size,
             max_text_size=max_text_size,
+            max_attributes=max_attributes,
+            max_attribute_size=max_attribute_size,
+            max_name_size=max_name_size,
+            max_comment_size=max_comment_size,
         ).getroot()
         self._setroot(root)
         return root
@@ -95,6 +103,10 @@ def fromstring(
     max_depth: int = 1000,
     max_entity_size: int = 10 * 1024 * 1024,
     max_text_size: int = 100 * 1024 * 1024,
+    max_attributes: int = 1000,
+    max_attribute_size: int = 10 * 1024 * 1024,
+    max_name_size: int = 1024,
+    max_comment_size: int = 10 * 1024 * 1024,
 ) -> Element:
     """Parse XML from string or bytes with strict security defenses.
 
@@ -107,6 +119,10 @@ def fromstring(
         max_depth: Maximum allowed element nesting depth (default 1000).
         max_entity_size: Maximum allowed entity size (default 10MB).
         max_text_size: Maximum allowed accumulated text size (default 100MB).
+        max_attributes: Maximum allowed attributes per element (default 1000).
+        max_attribute_size: Maximum allowed size per attribute in bytes (default 10MB).
+        max_name_size: Maximum allowed element tag or attribute name length (default 1024).
+        max_comment_size: Maximum allowed XML comment size in bytes (default 10MB).
 
     Returns:
         The root `xml.etree.ElementTree.Element`.
@@ -119,6 +135,10 @@ def fromstring(
         max_depth=max_depth,
         max_entity_size=max_entity_size,
         max_text_size=max_text_size,
+        max_attributes=max_attributes,
+        max_attribute_size=max_attribute_size,
+        max_name_size=max_name_size,
+        max_comment_size=max_comment_size,
     )
 
 
@@ -134,6 +154,10 @@ def parse(
     max_depth: int = 1000,
     max_entity_size: int = 10 * 1024 * 1024,
     max_text_size: int = 100 * 1024 * 1024,
+    max_attributes: int = 1000,
+    max_attribute_size: int = 10 * 1024 * 1024,
+    max_name_size: int = 1024,
+    max_comment_size: int = 10 * 1024 * 1024,
 ) -> ElementTree:
     """Parse an XML document from a filepath or file-like object into an ElementTree."""
     if isinstance(source, (str, bytes, os.PathLike)):
@@ -152,6 +176,10 @@ def parse(
         max_depth=max_depth,
         max_entity_size=max_entity_size,
         max_text_size=max_text_size,
+        max_attributes=max_attributes,
+        max_attribute_size=max_attribute_size,
+        max_name_size=max_name_size,
+        max_comment_size=max_comment_size,
     )
     tree = ElementTree()
     tree._setroot(root)
@@ -168,6 +196,10 @@ def iterparse(
     max_depth: int = 1000,
     max_entity_size: int = 10 * 1024 * 1024,
     max_text_size: int = 100 * 1024 * 1024,
+    max_attributes: int = 1000,
+    max_attribute_size: int = 10 * 1024 * 1024,
+    max_name_size: int = 1024,
+    max_comment_size: int = 10 * 1024 * 1024,
 ) -> Iterator[tuple[str, Element]]:
     """Incrementally parse an XML document, yielding (event, elem) pairs safely.
 
@@ -183,6 +215,10 @@ def iterparse(
         max_depth=max_depth,
         max_entity_size=max_entity_size,
         max_text_size=max_text_size,
+        max_attributes=max_attributes,
+        max_attribute_size=max_attribute_size,
+        max_name_size=max_name_size,
+        max_comment_size=max_comment_size,
     )
     root = tree.getroot()
 

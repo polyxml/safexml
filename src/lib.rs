@@ -41,15 +41,18 @@ fn map_safe_error_to_py(py: Python<'_>, err: SafeXmlError) -> PyErr {
             },
             Err(e) => e,
         },
-        SafeXmlError::DepthLimitExceeded(_) | SafeXmlError::TextLimitExceeded(_) => {
-            match common.getattr("DefusedXmlException") {
-                Ok(cls) => match cls.call1((err.to_string(),)) {
-                    Ok(inst) => PyErr::from_value(inst),
-                    Err(e) => e,
-                },
+        SafeXmlError::DepthLimitExceeded(_)
+        | SafeXmlError::TextLimitExceeded(_)
+        | SafeXmlError::AttributeLimitExceeded(_)
+        | SafeXmlError::AttributeSizeLimitExceeded(_)
+        | SafeXmlError::NameLimitExceeded(_)
+        | SafeXmlError::CommentLimitExceeded(_) => match common.getattr("DefusedXmlException") {
+            Ok(cls) => match cls.call1((err.to_string(),)) {
+                Ok(inst) => PyErr::from_value(inst),
                 Err(e) => e,
-            }
-        }
+            },
+            Err(e) => e,
+        },
         SafeXmlError::ParseError(msg) => match common.getattr("ParseError") {
             Ok(cls) => match cls.call1((msg,)) {
                 Ok(inst) => PyErr::from_value(inst),
@@ -92,7 +95,11 @@ fn raw_to_py_element<'py>(
     forbid_external=true,
     max_depth=1000,
     max_entity_size=10485760,
-    max_text_size=104857600
+    max_text_size=104857600,
+    max_attributes=1000,
+    max_attribute_size=10485760,
+    max_name_size=1024,
+    max_comment_size=10485760
 ))]
 fn parse_xml<'py>(
     py: Python<'py>,
@@ -103,6 +110,10 @@ fn parse_xml<'py>(
     max_depth: usize,
     max_entity_size: usize,
     max_text_size: usize,
+    max_attributes: usize,
+    max_attribute_size: usize,
+    max_name_size: usize,
+    max_comment_size: usize,
 ) -> PyResult<Bound<'py, PyAny>> {
     let bytes_vec: Vec<u8>;
     let bytes_ref: &[u8] = if let Ok(s) = source.extract::<&str>() {
@@ -135,6 +146,10 @@ fn parse_xml<'py>(
         max_depth,
         max_entity_size,
         max_text_size,
+        max_attributes,
+        max_attribute_size,
+        max_name_size,
+        max_comment_size,
     };
 
     let raw_node = py

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import xml.etree.ElementTree as std_ET
 
 import defusedxml.ElementTree as defused_ET
@@ -35,3 +36,21 @@ def test_benchmark_stdlib(benchmark) -> None:
     res = benchmark(std_ET.fromstring, BENCHMARK_XML)
     assert res.tag == "catalog"
     assert len(res) == 200
+
+
+def test_benchmark_safexml_multithreaded(benchmark) -> None:
+    def _run():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(safe_ET.fromstring, BENCHMARK_XML) for _ in range(20)]
+            concurrent.futures.wait(futures)
+
+    benchmark(_run)
+
+
+def test_benchmark_defusedxml_multithreaded(benchmark) -> None:
+    def _run():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(defused_ET.fromstring, BENCHMARK_XML) for _ in range(20)]
+            concurrent.futures.wait(futures)
+
+    benchmark(_run)

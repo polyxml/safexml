@@ -20,6 +20,10 @@ pub struct ParseOptions {
     pub max_depth: usize,
     pub max_entity_size: usize,
     pub max_text_size: usize,
+    pub max_attributes: usize,
+    pub max_attribute_size: usize,
+    pub max_name_size: usize,
+    pub max_comment_size: usize,
 }
 
 impl Default for ParseOptions {
@@ -31,6 +35,10 @@ impl Default for ParseOptions {
             max_depth: 1000,
             max_entity_size: 10 * 1024 * 1024,
             max_text_size: 100 * 1024 * 1024,
+            max_attributes: 1000,
+            max_attribute_size: 10 * 1024 * 1024,
+            max_name_size: 1024,
+            max_comment_size: 10 * 1024 * 1024,
         }
     }
 }
@@ -61,6 +69,10 @@ pub enum SafeXmlError {
     },
     DepthLimitExceeded(usize),
     TextLimitExceeded(usize),
+    AttributeLimitExceeded(usize),
+    AttributeSizeLimitExceeded(usize),
+    NameLimitExceeded(usize),
+    CommentLimitExceeded(usize),
     ParseError(String),
 }
 
@@ -101,6 +113,22 @@ impl std::fmt::Display for SafeXmlError {
                     "XML document exceeded maximum text size limit of {}",
                     limit
                 )
+            }
+            SafeXmlError::AttributeLimitExceeded(limit) => {
+                write!(
+                    f,
+                    "XML element exceeded maximum attribute count limit of {}",
+                    limit
+                )
+            }
+            SafeXmlError::AttributeSizeLimitExceeded(limit) => {
+                write!(f, "XML attribute exceeded maximum size limit of {}", limit)
+            }
+            SafeXmlError::NameLimitExceeded(limit) => {
+                write!(f, "XML tag name exceeded maximum length limit of {}", limit)
+            }
+            SafeXmlError::CommentLimitExceeded(limit) => {
+                write!(f, "XML comment exceeded maximum size limit of {}", limit)
             }
             SafeXmlError::ParseError(msg) => write!(f, "XML ParseError: {}", msg),
         }
@@ -179,6 +207,16 @@ pub fn parse_xml_bytes(
                 }
             }
             Event::Start(start_event) => {
+                let name_bytes = start_event.name().into_inner();
+                if name_bytes.len() > options.max_name_size {
+                    return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+                }
+                if name_bytes.contains('\0') {
+                    return Err(SafeXmlError::ParseError(
+                        "Null byte detected in XML identifier".to_string(),
+                    ));
+                }
+
                 if stack.len() + 1 > options.max_depth {
                     return Err(SafeXmlError::DepthLimitExceeded(options.max_depth));
                 }
@@ -215,6 +253,16 @@ pub fn parse_xml_bytes(
                 }
             }
             Event::Empty(empty_event) => {
+                let name_bytes = empty_event.name().into_inner();
+                if name_bytes.len() > options.max_name_size {
+                    return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+                }
+                if name_bytes.contains('\0') {
+                    return Err(SafeXmlError::ParseError(
+                        "Null byte detected in XML identifier".to_string(),
+                    ));
+                }
+
                 if stack.len() + 1 > options.max_depth {
                     return Err(SafeXmlError::DepthLimitExceeded(options.max_depth));
                 }
@@ -239,6 +287,11 @@ pub fn parse_xml_bytes(
                     root = Some(elem);
                 } else {
                     stack.last_mut().unwrap().elem.children.push(elem);
+                }
+            }
+            Event::Comment(c) => {
+                if c.as_ref().len() > options.max_comment_size {
+                    return Err(SafeXmlError::CommentLimitExceeded(options.max_comment_size));
                 }
             }
             Event::Text(t) => {
@@ -302,11 +355,25 @@ fn parse_attributes(
             Err(e) => return Err(SafeXmlError::ParseError(e.to_string())),
         };
 
+        let key_bytes = a.key.into_inner();
+        if key_bytes.len() > options.max_name_size {
+            return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+        }
+        if key_bytes.contains('\0') {
+            return Err(SafeXmlError::ParseError(
+                "Null byte detected in XML identifier".to_string(),
+            ));
+        }
+
         let key_str = a.key.as_ref();
 
         // Standard ElementTree strips xmlns and xmlns:* declarations from element.attrib
         if key_str == "xmlns" || key_str.starts_with("xmlns:") {
             continue;
+        }
+
+        if attrib.len() + 1 > options.max_attributes {
+            return Err(SafeXmlError::AttributeLimitExceeded(options.max_attributes));
         }
 
         let (res, local) = resolver.resolve_attribute(a.key);
@@ -317,9 +384,21 @@ fn parse_attributes(
         };
 
         let val_str = a.value.as_ref();
+        if val_str.len() > options.max_attribute_size {
+            return Err(SafeXmlError::AttributeSizeLimitExceeded(
+                options.max_attribute_size,
+            ));
+        }
 
         let unescaped_val = match quick_xml::escape::unescape(val_str) {
-            Ok(u) => u.to_string(),
+            Ok(u) => {
+                if u.len() > options.max_attribute_size {
+                    return Err(SafeXmlError::AttributeSizeLimitExceeded(
+                        options.max_attribute_size,
+                    ));
+                }
+                u.to_string()
+            }
             Err(quick_xml::escape::EscapeError::UnrecognizedEntity(_, ent_name)) => {
                 if options.forbid_entities {
                     return Err(SafeXmlError::EntitiesForbidden(Box::new(
@@ -515,6 +594,75 @@ mod tests {
         match err {
             SafeXmlError::DepthLimitExceeded(3) => {}
             other => panic!("Expected DepthLimitExceeded, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_attribute_limit() {
+        let xml = br#"<root a1="1" a2="2" a3="3" a4="4"/>"#;
+        let opt = ParseOptions {
+            max_attributes: 3,
+            ..Default::default()
+        };
+        let err = parse_xml_bytes(xml, &opt).unwrap_err();
+        match err {
+            SafeXmlError::AttributeLimitExceeded(3) => {}
+            other => panic!("Expected AttributeLimitExceeded, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_attribute_size_limit() {
+        let xml = br#"<root a="12345678901"/>"#;
+        let opt = ParseOptions {
+            max_attribute_size: 10,
+            ..Default::default()
+        };
+        let err = parse_xml_bytes(xml, &opt).unwrap_err();
+        match err {
+            SafeXmlError::AttributeSizeLimitExceeded(10) => {}
+            other => panic!("Expected AttributeSizeLimitExceeded, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_name_limit() {
+        let xml = br#"<verylongtagnamehere/>"#;
+        let opt = ParseOptions {
+            max_name_size: 10,
+            ..Default::default()
+        };
+        let err = parse_xml_bytes(xml, &opt).unwrap_err();
+        match err {
+            SafeXmlError::NameLimitExceeded(10) => {}
+            other => panic!("Expected NameLimitExceeded, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_comment_limit() {
+        let xml = br#"<root><!-- this is a long comment --></root>"#;
+        let opt = ParseOptions {
+            max_comment_size: 10,
+            ..Default::default()
+        };
+        let err = parse_xml_bytes(xml, &opt).unwrap_err();
+        match err {
+            SafeXmlError::CommentLimitExceeded(10) => {}
+            other => panic!("Expected CommentLimitExceeded, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_null_byte_rejection() {
+        let xml = b"<root\0name/>";
+        let opt = ParseOptions::default();
+        let err = parse_xml_bytes(xml, &opt).unwrap_err();
+        match err {
+            SafeXmlError::ParseError(msg) => {
+                assert!(msg.contains("Null byte"));
+            }
+            other => panic!("Expected ParseError with null byte, got {:?}", other),
         }
     }
 }

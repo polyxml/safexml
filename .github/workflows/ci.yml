@@ -69,8 +69,8 @@ jobs:
 
       - name: Lint Python with Ruff
         run: |
-          ruff check python tests
-          ruff format --check python tests
+          ruff check python tests benchmarks
+          ruff format --check python tests benchmarks
 
       - name: Run pytest
         run: pytest -v

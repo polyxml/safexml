@@ -108,3 +108,77 @@ def test_xml_alias(xml_simple: str) -> None:
     root2 = safe_ET.XML(xml_simple)
     assert root1.tag == root2.tag
     assert len(root1) == len(root2)
+
+
+def test_elementtree_instance_parse(tmp_path: any, xml_simple: str) -> None:
+    """safe_ET.ElementTree.parse() instance method must parse into self and return root."""
+    file_path = tmp_path / "test_instance.xml"
+    file_path.write_text(xml_simple, encoding="utf-8")
+
+    tree = safe_ET.ElementTree()
+    root = tree.parse(str(file_path))
+    assert root.tag == "catalog"
+    assert tree.getroot() is root
+
+    # Also test passing Path directly
+    tree2 = safe_ET.ElementTree()
+    root2 = tree2.parse(file_path)
+    assert root2.tag == "catalog"
+
+
+def test_parse_invalid_source_type() -> None:
+    """parse() with invalid object must raise TypeError."""
+    import pytest
+
+    with pytest.raises(TypeError, match="Invalid source type"):
+        safe_ET.parse(12345)  # type: ignore[arg-type]
+
+
+def test_iterparse_event_filters(xml_simple: str) -> None:
+    """iterparse with only 'start' or only 'end' events."""
+    starts = list(safe_ET.iterparse(io.StringIO(xml_simple), events=("start",)))
+    assert all(ev == "start" for ev, _ in starts)
+    assert len(starts) > 0
+
+    ends = list(safe_ET.iterparse(io.StringIO(xml_simple), events=("end",)))
+    assert all(ev == "end" for ev, _ in ends)
+    assert len(ends) > 0
+
+    defaults = list(safe_ET.iterparse(io.StringIO(xml_simple)))
+    assert all(ev == "end" for ev, _ in defaults)
+
+
+def test_exception_representations_and_fields() -> None:
+    """All exception reprs and attributes must format correctly without crashing."""
+    from safexml.common import (
+        DefusedXmlException,
+        DTDForbidden,
+        EntitiesForbidden,
+        ExternalReferenceForbidden,
+        NotSupportedError,
+        ParseError,
+    )
+
+    base = DefusedXmlException("custom message")
+    assert repr(base) == "DefusedXmlException('custom message')"
+    assert base.args == ("custom message",)
+
+    dtd = DTDForbidden("root", sysid="http://example.com/test.dtd", pubid=None)
+    assert (
+        repr(dtd)
+        == "DTDForbidden(name='root', system_id='http://example.com/test.dtd', public_id=None)"
+    )
+    assert dtd.name == "root"
+    assert dtd.sysid == "http://example.com/test.dtd"
+    assert dtd.pubid is None
+
+    ent = EntitiesForbidden("evil", sysid=None, pubid=None)
+    assert "EntitiesForbidden(name='evil'" in repr(ent)
+    assert ent.name == "evil"
+
+    ext = ExternalReferenceForbidden(sysid="file:///etc/passwd", pubid=None)
+    assert repr(ext) == "ExternalReferenceForbidden(system_id='file:///etc/passwd', public_id=None)"
+    assert ext.sysid == "file:///etc/passwd"
+
+    assert issubclass(NotSupportedError, DefusedXmlException)
+    assert issubclass(ParseError, DefusedXmlException)

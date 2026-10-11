@@ -118,3 +118,96 @@ def test_iterparse_security(xml_bomb: str) -> None:
     bio = io.BytesIO(xml_bomb.encode("utf-8"))
     with pytest.raises(EntitiesForbidden):
         list(ET.iterparse(bio))
+
+
+def test_attribute_flood_hash_dos() -> None:
+    """Attribute count flood (Attribute Hash DoS / CWE-400) must be rejected."""
+    xml = '<root a1="1" a2="2" a3="3" a4="4" a5="5"/>'
+    with pytest.raises(DefusedXmlException, match="attribute count limit"):
+        ET.fromstring(xml, max_attributes=3)
+
+    # Allowed when below limit
+    root = ET.fromstring(xml, max_attributes=10)
+    assert len(root.attrib) == 5
+
+
+def test_giant_attribute_value_bomb() -> None:
+    """Giant attribute value bomb (CWE-400) must be rejected."""
+    huge_attr = f'<root attr="{"A" * 500}"/>'
+    with pytest.raises(DefusedXmlException, match="attribute exceeded maximum size limit"):
+        ET.fromstring(huge_attr, max_attribute_size=100)
+
+    # Allowed when below limit
+    root = ET.fromstring(huge_attr, max_attribute_size=1000)
+    assert len(root.attrib["attr"]) == 500
+
+
+def test_giant_tag_name_bomb() -> None:
+    """Giant element tag name bomb must be rejected."""
+    huge_tag = f"<{'A' * 500}/>"
+    with pytest.raises(DefusedXmlException, match="tag name exceeded maximum length limit"):
+        ET.fromstring(huge_tag, max_name_size=50)
+
+    # Allowed when below limit
+    root = ET.fromstring(huge_tag, max_name_size=1000)
+    assert len(root.tag) == 500
+
+
+def test_comment_size_limit() -> None:
+    """Giant comment bomb (Comment Amplification / CWE-400) must be rejected."""
+    huge_comment = f"<root><!-- {'C' * 500} --></root>"
+    with pytest.raises(DefusedXmlException, match="comment exceeded maximum size limit"):
+        ET.fromstring(huge_comment, max_comment_size=50)
+
+    # Allowed when below limit
+    root = ET.fromstring(huge_comment, max_comment_size=1000)
+    assert root.tag == "root"
+
+
+def test_null_byte_in_tag_name() -> None:
+    """Null byte in element tag name must be rejected to prevent C-string truncation attacks."""
+    from safexml.common import ParseError
+
+    with pytest.raises(ParseError, match="Null byte"):
+        ET.fromstring(b"<root\0bad/>")
+
+    with pytest.raises(ParseError, match="Null byte"):
+        ET.fromstring(b"<root><bad\0child/></root>")
+
+
+def test_null_byte_in_attribute_key() -> None:
+    """Null byte in attribute name must be rejected."""
+    from safexml.common import ParseError
+
+    with pytest.raises(ParseError, match="Null byte"):
+        ET.fromstring(b'<root attr\0bad="value"/>')
+
+
+def test_parameter_entity_in_dtd() -> None:
+    """Parameter entities (%param;) in DTD must be strictly rejected."""
+    xml_pe = '<!DOCTYPE root [ <!ENTITY % pe "test"> ]><root/>'
+    with pytest.raises(EntitiesForbidden) as excinfo:
+        ET.fromstring(xml_pe, forbid_entities=True)
+    assert excinfo.value.name == "pe"
+
+
+def test_text_accumulation_limit() -> None:
+    """Text size accumulation limit must prevent memory blowup from uncompressed text."""
+    xml = f"<root><child>{'T' * 500}</child></root>"
+    with pytest.raises(DefusedXmlException, match="text size limit"):
+        ET.fromstring(xml, max_text_size=100)
+
+    # Allowed when below limit
+    root = ET.fromstring(xml, max_text_size=1000)
+    assert root[0].text == "T" * 500
+
+
+def test_cdata_accumulation_limit() -> None:
+    """CDATA text size accumulation limit must prevent memory blowup via CDATA blocks."""
+    xml = f"<root><![CDATA[{'C' * 500}]]></root>"
+    with pytest.raises(DefusedXmlException, match="text size limit"):
+        ET.fromstring(xml, max_text_size=100)
+
+    # Allowed when below limit
+    root = ET.fromstring(xml, max_text_size=1000)
+    assert root.text == "C" * 500
