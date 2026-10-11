@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/polyxml/safexml/main/docs/assets/brand/logo_polyxml_banner.png" alt="PolyXML SafeXML" width="1000">
+</p>
+
 # SafeXML 🛡️
 
 **The memory-safe, GIL-free, ultra-fast XML parser and drop-in `defusedxml` successor built in Rust.**

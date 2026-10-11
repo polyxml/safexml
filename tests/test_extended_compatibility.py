@@ -1,14 +1,4 @@
-"""Tests verifying direct fixes for known upstream defusedxml issues.
-
-Resolves:
-- tiran/defusedxml#105: Exception formatting compatible with `rich` tracebacks.
-- tiran/defusedxml#104: PEP 561 py.typed marker and type annotations.
-- tiran/defusedxml#87: Missing `ElementTree.indent()` function.
-- tiran/defusedxml#80: Missing `Element` class export.
-- tiran/defusedxml#79: Missing `register_namespace()` method.
-- tiran/defusedxml#78: `fromstring()` does not accept `parser` argument.
-- tiran/defusedxml#76, #77, #88: Safe `defuse_stdlib()` without breaking 3rd-party libs.
-"""
+"""Tests verifying standard library compatibility, formatting, and developer ergonomics."""
 
 from __future__ import annotations
 
@@ -26,11 +16,8 @@ from safexml.common import (
 )
 
 
-def test_fix_issue_105_rich_exception_formatting() -> None:
-    """Exception classes must populate .args properly so rich traceback printing does not crash.
-
-    References: tiran/defusedxml#105
-    """
+def test_exception_traceback_and_args_formatting() -> None:
+    """Exception classes must populate .args properly for structured logging and traceback formatters."""
     exc1 = DTDForbidden(name="root", sysid="http://example.com/test.dtd", pubid=None)
     assert len(exc1.args) > 0
     assert "DTDForbidden" in str(exc1)
@@ -47,11 +34,8 @@ def test_fix_issue_105_rich_exception_formatting() -> None:
     assert "ExternalReferenceForbidden" in repr(exc3)
 
 
-def test_fix_issue_87_indent_support() -> None:
-    """safexml.ElementTree must provide and re-export `indent()`.
-
-    References: tiran/defusedxml#87
-    """
+def test_elementtree_indent_support() -> None:
+    """safexml.ElementTree must provide and re-export `indent()` matching modern stdlib API."""
     assert hasattr(ET, "indent")
     assert hasattr(safexml, "indent")
 
@@ -62,11 +46,8 @@ def test_fix_issue_87_indent_support() -> None:
     assert "    <subchild />" in serialized or "    <subchild/>" in serialized
 
 
-def test_fix_issue_80_element_class_export() -> None:
-    """`Element` must be directly importable from `safexml.ElementTree` and `safexml`.
-
-    References: tiran/defusedxml#80
-    """
+def test_element_class_reexport() -> None:
+    """`Element` must be directly importable from `safexml.ElementTree` and top-level `safexml`."""
     assert hasattr(ET, "Element")
     assert hasattr(safexml, "Element")
 
@@ -76,45 +57,30 @@ def test_fix_issue_80_element_class_export() -> None:
     assert elem.attrib["attr"] == "val"
 
 
-def test_fix_issue_79_register_namespace() -> None:
-    """`register_namespace` must be available in `safexml.ElementTree` and `safexml`.
-
-    References: tiran/defusedxml#79
-    """
+def test_register_namespace_support() -> None:
+    """`register_namespace` must be available in `safexml.ElementTree` and top-level `safexml`."""
     assert hasattr(ET, "register_namespace")
     assert hasattr(safexml, "register_namespace")
 
-    # Calling register_namespace should not raise
+    # Calling register_namespace should register without error
     ET.register_namespace("custom", "http://example.com/custom")
 
 
-def test_fix_issue_78_fromstring_parser_kwarg() -> None:
-    """`fromstring()` must accept `parser=` parameter for standard library signature parity.
-
-    References: tiran/defusedxml#78
-    """
-    # In stdlib ElementTree: fromstring(text, parser=None)
-    # defusedxml broke when callers passed parser=None
+def test_fromstring_parser_keyword_argument() -> None:
+    """`fromstring()` must accept `parser=` parameter for standard library signature parity."""
     root = ET.fromstring("<root><item/></root>", parser=None)
     assert root.tag == "root"
 
 
-def test_fix_issue_104_py_typed_marker() -> None:
-    """Package must include PEP 561 `py.typed` marker for type checkers (mypy/pyright).
-
-    References: tiran/defusedxml#104
-    """
+def test_pep561_py_typed_marker() -> None:
+    """Package must include PEP 561 `py.typed` marker for static type checkers (mypy/pyright)."""
     safexml_pkg = pathlib.Path(safexml.__file__).parent
     py_typed = safexml_pkg / "py.typed"
     assert py_typed.is_file(), f"Missing PEP 561 marker at {py_typed}"
 
 
-def test_fix_defuse_stdlib_safety() -> None:
-    """`defuse_stdlib()` must safely patch stdlib functions without breaking class identity.
-
-    References: tiran/defusedxml#76, #77, #88
-    """
-    # Save original references
+def test_defuse_stdlib_interoperability() -> None:
+    """`defuse_stdlib()` must safely protect standard library XML parsing functions without breaking class identity."""
     orig_fromstring = std_ET.fromstring
     try:
         safexml.defuse_stdlib()

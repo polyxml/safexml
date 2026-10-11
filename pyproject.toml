@@ -27,6 +27,16 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = []
+keywords = [
+    "xml",
+    "security",
+    "xxe",
+    "osv",
+    "defusedxml",
+    "polyxml",
+    "cwe-611",
+    "cwe-776",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -42,6 +52,8 @@ Homepage = "https://github.com/polyxml/safexml"
 Documentation = "https://github.com/polyxml/safexml#readme"
 Repository = "https://github.com/polyxml/safexml"
 Issues = "https://github.com/polyxml/safexml/issues"
+Changelog = "https://github.com/polyxml/safexml/releases"
+"Security Advisories" = "https://github.com/polyxml/safexml/security/advisories"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
