@@ -38,3 +38,4 @@ fi
 
 echo -e "${GREEN}[git-hook: pre-push] All tests passed! Ready to push.${NC}"
 exit 0
+

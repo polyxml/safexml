@@ -69,3 +69,4 @@ fi
 
 echo -e "${GREEN}[git-hook: pre-commit] All pre-commit checks passed successfully!${NC}"
 exit 0
+

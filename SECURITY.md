@@ -22,3 +22,4 @@ Please include:
 3. Observed vs expected behavior.
 
 You will receive an acknowledgment within 48 hours and regular updates on the mitigation and release patch.
+

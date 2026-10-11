@@ -85,3 +85,4 @@ jobs:
           python-version: "3.12"
       - name: Verify Cargo.toml and pyproject.toml versions match
         run: python scripts/sync_version.py --check
+

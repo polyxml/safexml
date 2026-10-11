@@ -94,3 +94,4 @@ When contributing or refactoring, strictly maintain the following invariants:
 ## 4. Release Process
 - Releases are automated via GitHub Actions (`.github/workflows/release.yml`) using Semantic Release (`.releaserc`) and PyPI Trusted Publishing.
 - Manifest versions (`Cargo.toml` and `pyproject.toml`) are kept in sync via `scripts/sync_version.py`.
+

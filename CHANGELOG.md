@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-## [0.1.0] - 2026-10-11
+## [1.0.0] - 2026-10-11
 
 ### Features
 - Initial release of `safexml`: High-performance, secure, modern XML parser and drop-in `defusedxml` replacement built in Rust.
@@ -19,3 +19,4 @@ See [standard-version](https://github.com/conventional-changelog/standard-versio
   - tiran/defusedxml#79: `register_namespace()` helper.
   - tiran/defusedxml#78: `fromstring(..., parser=None)` keyword signature parity.
   - tiran/defusedxml#76, #77, #88: Safe non-destructive `defuse_stdlib()`.
+
