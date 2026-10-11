@@ -31,3 +31,4 @@ If you encountered a bug, unexpected parsing behavior, or performance regression
 ## 4. Security Inquiries
 
 For vulnerability reports or security bypass disclosures, do **not** use the public issue tracker. Please consult our [Security Policy](SECURITY.md) or submit a report via [GitHub Private Vulnerability Reporting](https://github.com/polyxml/safexml/security/advisories/new).
+

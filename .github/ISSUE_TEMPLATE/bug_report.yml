@@ -39,3 +39,4 @@ body:
       description: OS version (Linux/macOS/Windows), Python version (>= 3.12), and SafeXML version (`safexml.__version__`).
     validations:
       required: true
+

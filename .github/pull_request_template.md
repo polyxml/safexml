@@ -26,3 +26,4 @@ Before submitting, please ensure:
 - [ ] `pytest -v` passes with 100% statement and branch coverage (`--cov-fail-under=100`).
 - [ ] `python scripts/sync_version.py --check` confirms version parity.
 - [ ] New or updated documentation is included if applicable.
+

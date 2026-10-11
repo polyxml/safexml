@@ -6,3 +6,4 @@ contact_links:
   - name: Security Vulnerabilities
     url: https://github.com/polyxml/safexml/security/advisories/new
     about: Report security issues and vulnerability bypasses privately.
+

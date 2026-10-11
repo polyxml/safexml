@@ -21,6 +21,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -33,10 +38,10 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
 
       - name: Run Rust tests
-        run: cargo test --all-targets
+        run: cargo test --no-default-features
 
   python-test:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}

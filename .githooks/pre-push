@@ -17,7 +17,14 @@ echo -e "${BLUE}[git-hook: pre-push]${NC} Running pre-push verification tests...
 
 # 1. Rust Cargo Check & Tests
 echo -e "${BLUE}[1/2] Running Rust tests (cargo test)...${NC}"
-cargo test || {
+if [ -d ".venv" ]; then
+    PY_LIBDIR=$(.venv/bin/python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))" 2>/dev/null || true)
+    if [ -n "$PY_LIBDIR" ]; then
+        export LD_LIBRARY_PATH="$PY_LIBDIR:$LD_LIBRARY_PATH"
+        export PYO3_PYTHON="$(pwd)/.venv/bin/python3"
+    fi
+fi
+cargo test --no-default-features || {
     echo -e "${RED}[FAIL] cargo test failed!${NC}"
     exit 1
 }

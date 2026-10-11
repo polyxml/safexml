@@ -102,3 +102,4 @@ python benchmarks/run_benchmarks.py
 4. Ensure 100% coverage is maintained (`pytest`).
 5. Commit using [Conventional Commits](https://www.conventionalcommits.org/) (e.g. `feat:`, `fix:`, `docs:`, `perf:`).
 6. Open a Pull Request against `main`. All CI checks must pass before merging.
+

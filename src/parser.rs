@@ -246,10 +246,6 @@ pub fn parse_xml_bytes(
                     } else {
                         stack.last_mut().unwrap().elem.children.push(frame.elem);
                     }
-                } else {
-                    return Err(SafeXmlError::ParseError(
-                        "Unexpected closing tag".to_string(),
-                    ));
                 }
             }
             Event::Empty(empty_event) => {
@@ -391,14 +387,7 @@ fn parse_attributes(
         }
 
         let unescaped_val = match quick_xml::escape::unescape(val_str) {
-            Ok(u) => {
-                if u.len() > options.max_attribute_size {
-                    return Err(SafeXmlError::AttributeSizeLimitExceeded(
-                        options.max_attribute_size,
-                    ));
-                }
-                u.to_string()
-            }
+            Ok(u) => u.to_string(),
             Err(quick_xml::escape::EscapeError::UnrecognizedEntity(_, ent_name)) => {
                 if options.forbid_entities {
                     return Err(SafeXmlError::EntitiesForbidden(Box::new(
@@ -544,10 +533,10 @@ mod tests {
         <bomb>&a;</bomb>"#;
         let opt = ParseOptions::default();
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        match err {
-            SafeXmlError::EntitiesForbidden(d) => assert_eq!(d.name, "a"),
-            other => panic!("Expected EntitiesForbidden, got {:?}", other),
-        }
+        let SafeXmlError::EntitiesForbidden(d) = err else {
+            panic!()
+        };
+        assert_eq!(d.name, "a");
     }
 
     #[test]
@@ -558,15 +547,20 @@ mod tests {
         <root>&ee;</root>"#;
         let opt = ParseOptions::default();
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        match err {
-            SafeXmlError::ExternalReferenceForbidden { sysid, .. } => {
-                assert_eq!(
-                    sysid.as_deref(),
-                    Some("http://www.w3schools.com/xml/note.xml")
-                );
-            }
-            other => panic!("Expected ExternalReferenceForbidden, got {:?}", other),
-        }
+        let SafeXmlError::ExternalReferenceForbidden { sysid, .. } = err else {
+            panic!()
+        };
+        assert_eq!(
+            sysid.as_deref(),
+            Some("http://www.w3schools.com/xml/note.xml")
+        );
+
+        let xml2 = br#"<!DOCTYPE root SYSTEM "http://example.com/test.dtd"><root/>"#;
+        let err2 = parse_xml_bytes(xml2, &opt).unwrap_err();
+        let SafeXmlError::ExternalReferenceForbidden { sysid: sys2, .. } = err2 else {
+            panic!()
+        };
+        assert_eq!(sys2.as_deref(), Some("http://example.com/test.dtd"));
     }
 
     #[test]
@@ -577,10 +571,10 @@ mod tests {
             ..Default::default()
         };
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        match err {
-            SafeXmlError::DTDForbidden { name, .. } => assert_eq!(name, "root"),
-            other => panic!("Expected DTDForbidden, got {:?}", other),
-        }
+        let SafeXmlError::DTDForbidden { name, .. } = err else {
+            panic!()
+        };
+        assert_eq!(name, "root");
     }
 
     #[test]
@@ -591,10 +585,7 @@ mod tests {
             ..Default::default()
         };
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        match err {
-            SafeXmlError::DepthLimitExceeded(3) => {}
-            other => panic!("Expected DepthLimitExceeded, got {:?}", other),
-        }
+        assert!(matches!(err, SafeXmlError::DepthLimitExceeded(3)));
     }
 
     #[test]
@@ -605,10 +596,7 @@ mod tests {
             ..Default::default()
         };
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        match err {
-            SafeXmlError::AttributeLimitExceeded(3) => {}
-            other => panic!("Expected AttributeLimitExceeded, got {:?}", other),
-        }
+        assert!(matches!(err, SafeXmlError::AttributeLimitExceeded(3)));
     }
 
     #[test]
@@ -619,10 +607,7 @@ mod tests {
             ..Default::default()
         };
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        match err {
-            SafeXmlError::AttributeSizeLimitExceeded(10) => {}
-            other => panic!("Expected AttributeSizeLimitExceeded, got {:?}", other),
-        }
+        assert!(matches!(err, SafeXmlError::AttributeSizeLimitExceeded(10)));
     }
 
     #[test]
@@ -633,10 +618,11 @@ mod tests {
             ..Default::default()
         };
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        match err {
-            SafeXmlError::NameLimitExceeded(10) => {}
-            other => panic!("Expected NameLimitExceeded, got {:?}", other),
-        }
+        assert!(matches!(err, SafeXmlError::NameLimitExceeded(10)));
+
+        let xml_start = br#"<verylongtagnamehere>content</verylongtagnamehere>"#;
+        let err_start = parse_xml_bytes(xml_start, &opt).unwrap_err();
+        assert!(matches!(err_start, SafeXmlError::NameLimitExceeded(10)));
     }
 
     #[test]
@@ -647,10 +633,7 @@ mod tests {
             ..Default::default()
         };
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        match err {
-            SafeXmlError::CommentLimitExceeded(10) => {}
-            other => panic!("Expected CommentLimitExceeded, got {:?}", other),
-        }
+        assert!(matches!(err, SafeXmlError::CommentLimitExceeded(10)));
     }
 
     #[test]
@@ -658,11 +641,309 @@ mod tests {
         let xml = b"<root\0name/>";
         let opt = ParseOptions::default();
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        match err {
-            SafeXmlError::ParseError(msg) => {
-                assert!(msg.contains("Null byte"));
-            }
-            other => panic!("Expected ParseError with null byte, got {:?}", other),
-        }
+        assert!(format!("{}", err).contains("Null byte"));
+
+        let xml_start = b"<root\0name>content</root\0name>";
+        let err_start = parse_xml_bytes(xml_start, &opt).unwrap_err();
+        assert!(format!("{}", err_start).contains("Null byte"));
+    }
+
+    #[test]
+    fn test_error_display_and_default_traits() {
+        let _elem = RawElement::default();
+        let opt = ParseOptions::default();
+        assert_eq!(opt.max_depth, 1000);
+
+        let e1 = SafeXmlError::DTDForbidden {
+            name: "n".into(),
+            sysid: Some("s".into()),
+            pubid: Some("p".into()),
+        };
+        assert!(format!("{}", e1).contains("DTDForbidden"));
+
+        let e2 = SafeXmlError::EntitiesForbidden(Box::new(EntityForbiddenDetails {
+            name: "e".into(),
+            value: Some("v".into()),
+            base: None,
+            sysid: None,
+            pubid: None,
+            notation_name: None,
+        }));
+        assert!(format!("{}", e2).contains("EntitiesForbidden"));
+
+        let e3 = SafeXmlError::ExternalReferenceForbidden {
+            context: None,
+            base: None,
+            sysid: Some("s".into()),
+            pubid: None,
+        };
+        assert!(format!("{}", e3).contains("ExternalReferenceForbidden"));
+
+        let e4 = SafeXmlError::DepthLimitExceeded(10);
+        assert!(format!("{}", e4).contains("depth limit"));
+
+        let e5 = SafeXmlError::TextLimitExceeded(10);
+        assert!(format!("{}", e5).contains("text size limit"));
+
+        let e6 = SafeXmlError::AttributeLimitExceeded(10);
+        assert!(format!("{}", e6).contains("attribute count limit"));
+
+        let e7 = SafeXmlError::AttributeSizeLimitExceeded(10);
+        assert!(format!("{}", e7).contains("attribute exceeded"));
+
+        let e8 = SafeXmlError::NameLimitExceeded(10);
+        assert!(format!("{}", e8).contains("tag name exceeded"));
+
+        let e9 = SafeXmlError::CommentLimitExceeded(10);
+        assert!(format!("{}", e9).contains("comment exceeded"));
+
+        let e10 = SafeXmlError::ParseError("syntax error".into());
+        assert!(format!("{}", e10).contains("syntax error"));
+    }
+
+    #[test]
+    fn test_cdata_and_tail_and_entities() {
+        let xml = br#"<root>
+            <child id="c1">Hello &amp; &lt; &gt; &quot; &apos; &#65; &#x42; &#X43; <![CDATA[raw <data>]]></child>
+            Tail text here<![CDATA[ more tail]]>
+        </root>"#;
+        let opt = ParseOptions::default();
+        let root = parse_xml_bytes(xml, &opt).unwrap();
+        assert_eq!(root.tag, "root");
+        assert_eq!(root.children.len(), 1);
+        let child = &root.children[0];
+        assert_eq!(child.tag, "child");
+        assert!(child
+            .text
+            .as_ref()
+            .unwrap()
+            .contains("Hello & < > \" ' A B C raw <data>"));
+        assert!(child
+            .tail
+            .as_ref()
+            .unwrap()
+            .contains("Tail text here more tail"));
+    }
+
+    #[test]
+    fn test_entity_resolution_errors() {
+        let opt = ParseOptions {
+            forbid_entities: false,
+            ..Default::default()
+        };
+        // Invalid hex
+        let err1 = parse_xml_bytes(b"<root>&#xZZ;</root>", &opt).unwrap_err();
+        assert!(format!("{}", err1).contains("Invalid character reference"));
+
+        // Invalid dec
+        let err2 = parse_xml_bytes(b"<root>&#ZZ;</root>", &opt).unwrap_err();
+        assert!(format!("{}", err2).contains("Invalid character reference"));
+
+        // Invalid unicode surrogate code point
+        let err3 = parse_xml_bytes(b"<root>&#xD800;</root>", &opt).unwrap_err();
+        assert!(format!("{}", err3).contains("Invalid unicode character"));
+
+        // Undefined entity with forbid_entities = false
+        let err4 = parse_xml_bytes(b"<root>&custom;</root>", &opt).unwrap_err();
+        assert!(format!("{}", err4).contains("Undefined entity: &custom;"));
+
+        // Undefined entity with forbid_entities = true
+        let opt_forbid = ParseOptions::default();
+        let err5 = parse_xml_bytes(b"<root>&custom;</root>", &opt_forbid).unwrap_err();
+        let SafeXmlError::EntitiesForbidden(d) = err5 else {
+            panic!()
+        };
+        assert_eq!(d.name, "custom");
+    }
+
+    #[test]
+    fn test_attribute_namespaces_and_entities() {
+        let xml = br#"<p:root xmlns="http://default.com" xmlns:p="http://prefix.com" p:attr="val" regular="plain &amp; simple"/>"#;
+        let opt = ParseOptions::default();
+        let root = parse_xml_bytes(xml, &opt).unwrap();
+        assert_eq!(root.tag, "{http://prefix.com}root");
+        assert_eq!(root.attrib.len(), 2);
+        assert_eq!(
+            root.attrib[0],
+            ("{http://prefix.com}attr".to_string(), "val".to_string())
+        );
+        assert_eq!(
+            root.attrib[1],
+            ("regular".to_string(), "plain & simple".to_string())
+        );
+
+        // Unknown namespace prefix
+        let xml_unk = br#"<unk:root unk:attr="val"/>"#;
+        let root_unk = parse_xml_bytes(xml_unk, &opt).unwrap();
+        assert_eq!(root_unk.tag, "unk:root");
+        assert_eq!(
+            root_unk.attrib[0],
+            ("unk:attr".to_string(), "val".to_string())
+        );
+
+        // Attribute with unknown entity when forbid_entities = true
+        let xml_attr_ent = br#"<root attr="&unknown;"/>"#;
+        let err = parse_xml_bytes(xml_attr_ent, &opt).unwrap_err();
+        let SafeXmlError::EntitiesForbidden(d) = err else {
+            panic!()
+        };
+        assert_eq!(d.name, "unknown");
+
+        // Attribute with unknown entity when forbid_entities = false
+        let opt_no_forbid = ParseOptions {
+            forbid_entities: false,
+            ..Default::default()
+        };
+        let err2 = parse_xml_bytes(xml_attr_ent, &opt_no_forbid).unwrap_err();
+        assert!(format!("{}", err2).contains("Unrecognized entity"));
+
+        // Attribute with null byte
+        let xml_attr_nul = b"<root at\x00tr='1'/>";
+        let err3 = parse_xml_bytes(xml_attr_nul, &opt).unwrap_err();
+        assert!(format!("{}", err3).contains("Null byte"));
+
+        // Tag name with null byte
+        let xml_tag_nul = b"<ro\x00ot/>";
+        let err4 = parse_xml_bytes(xml_tag_nul, &opt).unwrap_err();
+        assert!(format!("{}", err4).contains("Null byte"));
+
+        // Attribute name size limit
+        let opt_name_lim = ParseOptions {
+            max_name_size: 5,
+            ..Default::default()
+        };
+        let err5 = parse_xml_bytes(b"<root verylongattr='1'/>", &opt_name_lim).unwrap_err();
+        assert!(matches!(err5, SafeXmlError::NameLimitExceeded(5)));
+
+        // Attribute value size limit
+        let opt_attr_lim = ParseOptions {
+            max_attribute_size: 5,
+            ..Default::default()
+        };
+        let err6 = parse_xml_bytes(b"<root a='123456'/>", &opt_attr_lim).unwrap_err();
+        assert!(matches!(err6, SafeXmlError::AttributeSizeLimitExceeded(5)));
+    }
+
+    #[test]
+    fn test_text_limits_and_junk() {
+        let opt_text_lim = ParseOptions {
+            max_text_size: 5,
+            ..Default::default()
+        };
+        let err1 = parse_xml_bytes(b"<root>123456</root>", &opt_text_lim).unwrap_err();
+        assert!(matches!(err1, SafeXmlError::TextLimitExceeded(5)));
+
+        // Content before document element
+        let opt = ParseOptions::default();
+        let err2 = parse_xml_bytes(b"junk <root/>", &opt).unwrap_err();
+        assert!(format!("{}", err2).contains("Content before document element"));
+
+        // Junk after document element
+        let err3 = parse_xml_bytes(b"<root/> junk", &opt).unwrap_err();
+        assert!(format!("{}", err3).contains("Junk after document element"));
+
+        // No root element
+        let err4 = parse_xml_bytes(b"<!-- just a comment -->", &opt).unwrap_err();
+        assert!(format!("{}", err4).contains("No XML root element found"));
+
+        // Malformed closing tag
+        let err5 = parse_xml_bytes(b"<root></mismatch>", &opt).unwrap_err();
+        assert!(format!("{}", err5).contains("ParseError"));
+
+        // Whitespace before and after root
+        let root_spaces = parse_xml_bytes(b"  \n  <root/>  \n  ", &opt).unwrap();
+        assert_eq!(root_spaces.tag, "root");
+
+        // CDATA text limit exceeded
+        let err6 =
+            parse_xml_bytes(b"<root><![CDATA[toolongtext]]></root>", &opt_text_lim).unwrap_err();
+        assert!(matches!(err6, SafeXmlError::TextLimitExceeded(5)));
+
+        // Entity expansion text limit exceeded
+        let err7 = parse_xml_bytes(
+            b"<root>&amp;&amp;&amp;&amp;&amp;&amp;</root>",
+            &opt_text_lim,
+        )
+        .unwrap_err();
+        assert!(matches!(err7, SafeXmlError::TextLimitExceeded(5)));
+    }
+
+    #[test]
+    fn test_empty_elements_and_instructions_and_closings() {
+        let opt = ParseOptions::default();
+        // Standalone empty root
+        let root =
+            parse_xml_bytes(b"<?xml version='1.0'?><?pi target?><single id='1'/>", &opt).unwrap();
+        assert_eq!(root.tag, "single");
+        assert_eq!(root.attrib, vec![("id".to_string(), "1".to_string())]);
+
+        // Empty element as child
+        let root2 = parse_xml_bytes(b"<root><empty/></root>", &opt).unwrap();
+        assert_eq!(root2.children.len(), 1);
+        assert_eq!(root2.children[0].tag, "empty");
+
+        // Unexpected closing tag after root is closed
+        let err = parse_xml_bytes(b"<root></root></unexpected>", &opt).unwrap_err();
+        assert!(format!("{}", err).contains("ParseError"));
+
+        // Null byte in empty element tag name
+        let err2 = parse_xml_bytes(b"<ro\0ot/>", &opt).unwrap_err();
+        assert!(format!("{}", err2).contains("Null byte"));
+
+        // Name limit in empty element
+        let opt_name = ParseOptions {
+            max_name_size: 3,
+            ..Default::default()
+        };
+        let err3 = parse_xml_bytes(b"<verylong/>", &opt_name).unwrap_err();
+        assert!(matches!(err3, SafeXmlError::NameLimitExceeded(3)));
+
+        // Depth limit on empty element
+        let opt_depth = ParseOptions {
+            max_depth: 0,
+            ..Default::default()
+        };
+        let err4 = parse_xml_bytes(b"<single/>", &opt_depth).unwrap_err();
+        assert!(matches!(err4, SafeXmlError::DepthLimitExceeded(0)));
+
+        // Appending text chunks to existing text and tail
+        let root3 = parse_xml_bytes(
+            b"<root>part1<![CDATA[part2]]><child/>tail1<![CDATA[tail2]]></root>",
+            &opt,
+        )
+        .unwrap();
+        assert_eq!(root3.text.as_deref(), Some("part1part2"));
+        assert_eq!(root3.children[0].tail.as_deref(), Some("tail1tail2"));
+
+        // Invalid unicode char reference in decimal (surrogate code point 55296)
+        let opt_entities = ParseOptions {
+            forbid_entities: false,
+            ..Default::default()
+        };
+        let err5 = parse_xml_bytes(b"<root>&#55296;</root>", &opt_entities).unwrap_err();
+        assert!(format!("{}", err5).contains("Invalid unicode character"));
+
+        // Unknown entity in attribute with forbid_entities = true vs false
+        let err6 = parse_xml_bytes(b"<root attr='&custom;'/>", &opt).unwrap_err();
+        let SafeXmlError::EntitiesForbidden(d) = err6 else {
+            panic!()
+        };
+        assert_eq!(d.name, "custom");
+
+        // Namespace push error on start tag
+        let err7 = parse_xml_bytes(b"<root xmlns:xmlns='http://foo'></root>", &opt).unwrap_err();
+        assert!(format!("{}", err7).contains("xmlns"));
+
+        // Namespace push error on empty tag
+        let err8 = parse_xml_bytes(b"<root xmlns:xmlns='http://foo'/>", &opt).unwrap_err();
+        assert!(format!("{}", err8).contains("xmlns"));
+
+        // Malformed attribute syntax
+        let err9 = parse_xml_bytes(b"<root key=val/>", &opt).unwrap_err();
+        assert!(format!("{}", err9).contains("ParseError"));
+
+        // Escape error in attribute unescape
+        let err10 = parse_xml_bytes(b"<root attr='&#x999999999999;'/>", &opt).unwrap_err();
+        assert!(format!("{}", err10).contains("invalid character reference"));
     }
 }

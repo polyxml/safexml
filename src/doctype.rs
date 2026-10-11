@@ -189,12 +189,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_extract_quoted() {
+        assert_eq!(extract_quoted("", 0), None);
+        assert_eq!(extract_quoted("   ", 0), None);
+        assert_eq!(extract_quoted("noquote", 0), None);
+        assert_eq!(extract_quoted("\"unterminated", 0), None);
+        assert_eq!(
+            extract_quoted("'single'", 0),
+            Some(("single".to_string(), 8))
+        );
+        assert_eq!(
+            extract_quoted("   \"double\"  ", 0),
+            Some(("double".to_string(), 11))
+        );
+    }
+
+    #[test]
     fn test_doctype_parsing() {
+        // Empty
+        let empty = parse_doctype("   ");
+        assert_eq!(empty.name, "");
+
+        // No subset, SYSTEM
         let d1 = parse_doctype(r#"root SYSTEM "http://example.com/test.dtd""#);
         assert_eq!(d1.name, "root");
         assert_eq!(d1.system_id.as_deref(), Some("http://example.com/test.dtd"));
         assert_eq!(d1.public_id, None);
 
+        // PUBLIC with system
         let d2 = parse_doctype(
             r#"html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd""#,
         );
@@ -208,30 +230,52 @@ mod tests {
             Some("http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd")
         );
 
+        // PUBLIC without system
+        let d2b = parse_doctype(r#"root PUBLIC "pub_only""#);
+        assert_eq!(d2b.public_id.as_deref(), Some("pub_only"));
+        assert_eq!(d2b.system_id, None);
+
+        // With internal subset and entity declarations
         let d3 = parse_doctype(
             r#"xmlbomb [
             <!ENTITY a "1234567890">
-            <!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">
+            <!ENTITY b '&a;&a;&a;&a;&a;&a;&a;&a;'>
+            <!ENTITY % pe "param">
+            <!ENTITY pub_ent PUBLIC "pub_id" "sys_id">
+            <!ENTITY pic SYSTEM "pic.gif" NDATA gif>
+            <!ENTITY empty_junk >
+            <!ENTITY other ignore_unrecognized_token >
         ]"#,
         );
         assert_eq!(d3.name, "xmlbomb");
         assert!(d3.has_internal_subset);
-        assert_eq!(d3.entities.len(), 2);
+        assert_eq!(d3.entities.len(), 7);
         assert_eq!(d3.entities[0].name, "a");
         assert_eq!(d3.entities[0].value.as_deref(), Some("1234567890"));
         assert_eq!(d3.entities[1].name, "b");
-
-        let d4 = parse_doctype(
-            r#"external [
-            <!ENTITY ee SYSTEM "http://www.w3schools.com/xml/note.xml">
-        ]"#,
-        );
-        assert_eq!(d4.name, "external");
-        assert_eq!(d4.entities.len(), 1);
-        assert_eq!(d4.entities[0].name, "ee");
         assert_eq!(
-            d4.entities[0].system_id.as_deref(),
-            Some("http://www.w3schools.com/xml/note.xml")
+            d3.entities[1].value.as_deref(),
+            Some("&a;&a;&a;&a;&a;&a;&a;&a;")
         );
+        assert_eq!(d3.entities[2].name, "pe");
+        assert_eq!(d3.entities[3].name, "pub_ent");
+        assert_eq!(d3.entities[3].public_id.as_deref(), Some("pub_id"));
+        assert_eq!(d3.entities[3].system_id.as_deref(), Some("sys_id"));
+        assert_eq!(d3.entities[4].name, "pic");
+        assert_eq!(d3.entities[4].system_id.as_deref(), Some("pic.gif"));
+        assert_eq!(d3.entities[4].notation.as_deref(), Some("gif"));
+
+        // DTD with unmatched '[' bracket
+        let d_unmatched = parse_doctype("root [ unterminated");
+        assert!(d_unmatched.has_internal_subset);
+        assert_eq!(d_unmatched.entities.len(), 0);
+
+        // DTD with arbitrary whitespace and tokens before bracket
+        let d_tokens = parse_doctype("root SOMETOKEN [ ]");
+        assert!(d_tokens.has_internal_subset);
+
+        // DTD with trailing whitespace
+        let d_spaces = parse_doctype("root   ");
+        assert_eq!(d_spaces.name, "root");
     }
 }

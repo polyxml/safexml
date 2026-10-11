@@ -1,6 +1,6 @@
 [package]
 name = "safexml"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 authors = ["Bailey Nguyen <bailey.tan.nguyen@gmail.com>"]
 license = "MIT"
@@ -11,11 +11,18 @@ keywords = ["xml", "security", "defusedxml", "xxe", "parser"]
 
 [lib]
 name = "_safexml"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.29", features = ["abi3-py312", "extension-module"] }
+pyo3 = { version = "0.29", features = ["abi3-py312"] }
 quick-xml = { version = "0.42", features = ["encoding"] }
+
+[features]
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
+
+[dev-dependencies]
+pyo3 = { version = "0.29", features = ["auto-initialize"] }
 
 [profile.release]
 opt-level = 3
