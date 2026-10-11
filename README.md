@@ -9,7 +9,7 @@
 [![CI](https://github.com/polyxml/safexml/actions/workflows/ci.yml/badge.svg)](https://github.com/polyxml/safexml/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/safexml.svg)](https://pypi.org/project/safexml/)
 [![Python versions](https://img.shields.io/pypi/pyversions/safexml.svg)](https://pypi.org/project/safexml/)
-[![Coverage: 100%](https://img.shields.io/badge/Coverage-100%25-brightgreen.svg)](#100-enforced-code-coverage)
+[![Coverage: 100%](https://img.shields.io/badge/Coverage-100%25-brightgreen.svg)](https://github.com/polyxml/safexml/actions/workflows/ci.yml)
 [![Rust: 100% Safe](https://img.shields.io/badge/Rust-100%25%20Safe-orange.svg)](#1-immune-to-c-memory-corruption-cve-hell)
 [![GIL: Detached](https://img.shields.io/badge/GIL-Detached%20(True%20Concurrency)-blueviolet.svg)](#2-true-gil-release-for-modern-multi-threaded-services)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -194,22 +194,6 @@ try:
     ET.fromstring(f"<{'A' * 2000}/>", max_name_size=1024)
 except DefusedXmlException as exc:
     print(f"Blocked oversized tag: {exc}")
-```
-
----
-
-## 🎯 100% Enforced Code Coverage
-
-SafeXML maintains a strict **100.00% statement and branch coverage** requirement across every module. This is enforced directly in CI (`pytest --cov-fail-under=100`) and git pre-push hooks:
-
-```
-Name                            Stmts   Miss Branch BrPart  Cover
------------------------------------------------------------------
-python/safexml/ElementTree.py      43      0     10      0   100%
-python/safexml/__init__.py         13      0      0      0   100%
-python/safexml/common.py           41      0      0      0   100%
------------------------------------------------------------------
-TOTAL                              97      0     10      0   100%
 ```
 
 ---
