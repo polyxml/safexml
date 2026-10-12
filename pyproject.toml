@@ -64,6 +64,7 @@ strip = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "--color=yes -v --cov=safexml --cov-report=term-missing --cov-fail-under=100"
 
 [tool.coverage.run]
