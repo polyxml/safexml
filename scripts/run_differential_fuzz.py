@@ -118,7 +118,7 @@ def run_campaign(iterations: int, seed: int, regressions_dir: Path) -> int:
     regressions_dir.mkdir(parents=True, exist_ok=True)
 
     print(
-        f"🚀 Starting SafeXML Differential Fuzzing Campaign ({iterations:,} iterations, seed={seed})..."
+        f"[START] Starting SafeXML Differential Fuzzing Campaign ({iterations:,} iterations, seed={seed})..."
     )
     start_time = time.perf_counter()
 
@@ -140,7 +140,7 @@ def run_campaign(iterations: int, seed: int, regressions_dir: Path) -> int:
             h = hashlib.sha256(data).hexdigest()[:12]
             failing_path = regressions_dir / f"crash_{h}.xml"
             failing_path.write_bytes(data)
-            print(f"\n❌ UNHANDLED CRASH on iteration {i}: {crash}")
+            print(f"\n[FAIL] UNHANDLED CRASH on iteration {i}: {crash}")
             print(f"Saved payload to: {failing_path}")
             return 1
 
@@ -159,7 +159,7 @@ def run_campaign(iterations: int, seed: int, regressions_dir: Path) -> int:
                 h = hashlib.sha256(data).hexdigest()[:12]
                 failing_path = regressions_dir / f"permissive_{h}.xml"
                 failing_path.write_bytes(data)
-                print(f"\n❌ REJECTION PARITY VIOLATION on iteration {i}!")
+                print(f"\n[FAIL] REJECTION PARITY VIOLATION on iteration {i}!")
                 print(f"Stdlib rejected with {type(std_exc).__name__}, but SafeXML accepted it!")
                 print(f"Saved payload to: {failing_path}")
                 return 1
@@ -172,7 +172,7 @@ def run_campaign(iterations: int, seed: int, regressions_dir: Path) -> int:
                 h = hashlib.sha256(data).hexdigest()[:12]
                 failing_path = regressions_dir / f"discrepancy_{h}.xml"
                 failing_path.write_bytes(data)
-                print(f"\n❌ DOM DISCREPANCY on iteration {i}: {err}")
+                print(f"\n[FAIL] DOM DISCREPANCY on iteration {i}: {err}")
                 print(f"Saved payload to: {failing_path}")
                 return 1
 
@@ -185,7 +185,9 @@ def run_campaign(iterations: int, seed: int, regressions_dir: Path) -> int:
                 h = hashlib.sha256(data).hexdigest()[:12]
                 failing_path = regressions_dir / f"amplification_{h}.xml"
                 failing_path.write_bytes(data)
-                print(f"\n❌ EXCESSIVE AMPLIFICATION on iteration {i}: ratio {ratio:.2f} > 10.0")
+                print(
+                    f"\n[FAIL] EXCESSIVE AMPLIFICATION on iteration {i}: ratio {ratio:.2f} > 10.0"
+                )
                 print(f"Saved payload to: {failing_path}")
                 return 1
 
@@ -199,11 +201,13 @@ def run_campaign(iterations: int, seed: int, regressions_dir: Path) -> int:
             )
 
     total_time = time.perf_counter() - start_time
-    print(f"\n✅ Campaign Completed in {total_time:.2f}s ({iterations / total_time:,.0f} docs/sec)")
-    print(f"   • Valid Matches: {valid_matches:,}")
-    print(f"   • Malformed Inputs Rejected: {malformed_rejected:,}")
-    print(f"   • Peak Amplification Ratio: {max_amp:.2f}x (Threshold: 10.0x)")
-    print("   • Zero Panics, Zero Crashes, Zero Parity Discrepancies.")
+    print(
+        f"\n[OK] Campaign Completed in {total_time:.2f}s ({iterations / total_time:,.0f} docs/sec)"
+    )
+    print(f"   * Valid Matches: {valid_matches:,}")
+    print(f"   * Malformed Inputs Rejected: {malformed_rejected:,}")
+    print(f"   * Peak Amplification Ratio: {max_amp:.2f}x (Threshold: 10.0x)")
+    print("   * Zero Panics, Zero Crashes, Zero Parity Discrepancies.")
     return 0
 
 
