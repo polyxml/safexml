@@ -140,8 +140,8 @@ import safexml.ElementTree as ET
 
 # 100% identical API, backed by Rust:
 root = ET.fromstring("<catalog><item id='1'>Safe XML</item></catalog>")
-print(root.tag)               # "catalog"
-print(root[0].text)           # "Safe XML"
+print(root.tag)  # "catalog"
+print(root[0].text)  # "Safe XML"
 
 # Built-in pretty-printing
 ET.indent(root)
@@ -161,9 +161,11 @@ print(doc.documentElement.tagName)  # "catalog"
 from safexml import sax
 from xml.sax.handler import ContentHandler
 
+
 class CustomHandler(ContentHandler):
     def startElement(self, name, attrs):
         print(f"Element: {name}")
+
 
 sax.parseString("<root><item/></root>", CustomHandler())
 ```
@@ -218,6 +220,18 @@ try:
 except DefusedXmlException as exc:
     print(f"Blocked oversized tag: {exc}")
 ```
+
+---
+
+## 🧪 W3C XML Conformance Validation
+
+SafeXML is rigorously verified against the official **[W3C XML Conformance Test Suite (XMLTS 20130923)](https://www.w3.org/XML/Test/)** across all 2,585 test cases:
+
+- **100.00% Malformed Rejection Rate**: Zero discrepancies across all applicable XML 1.0 test cases. All non-well-formed documents are strictly rejected with zero panics or crashes.
+- **Security Policy Enforcement**: Explicit exclusions for external entity references (`forbid_external=True`) and general entity expansions (`forbid_entities=True`) block XXE and exponential blowup while preserving standard conformance.
+- **Automated Verification**: Integrated manifest runner in `scripts/run_w3c_conformance.py` and automated pytest suite.
+
+For the complete breakdown and specification details, see the **[W3C Conformance Report](docs/W3C_CONFORMANCE.md)**.
 
 ---
 

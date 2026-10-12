@@ -281,6 +281,209 @@ fn detect_declared_encoding(xml_bytes: &[u8]) -> Option<&'static encoding_rs::En
     encoding_rs::Encoding::for_label(enc_name.as_bytes())
 }
 
+fn is_xml_whitespace(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\r' | '\n')
+}
+
+fn check_doctype_casing(bytes: &[u8]) -> bool {
+    let mut i = 0;
+    while i + 9 <= bytes.len() {
+        if bytes[i] == b'<' && bytes[i + 1] == b'!' {
+            let kw = &bytes[i + 2..i + 9];
+            if kw.eq_ignore_ascii_case(b"DOCTYPE") && kw != b"DOCTYPE" {
+                return false;
+            }
+        }
+        i += 1;
+    }
+    true
+}
+
+fn is_valid_enc_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_alphabetic() => {
+            chars.all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+        }
+        _ => false,
+    }
+}
+
+fn validate_xml_decl(decl_str: &str) -> Result<(), SafeXmlError> {
+    if !decl_str.starts_with("xml") {
+        return Err(SafeXmlError::ParseError(
+            "XML declaration must start with 'xml'".to_string(),
+        ));
+    }
+    let rest = &decl_str[3..];
+    if rest.is_empty() || !rest.starts_with(|c: char| c.is_ascii_whitespace()) {
+        return Err(SafeXmlError::ParseError(
+            "Whitespace required after 'xml' in XML declaration".to_string(),
+        ));
+    }
+    let mut s = rest.trim_start();
+    let mut seen_version = false;
+    let mut seen_encoding = false;
+    let mut seen_standalone = false;
+
+    while !s.is_empty() {
+        let name_end = s
+            .find(|c: char| c == '=' || c.is_ascii_whitespace())
+            .unwrap_or(s.len());
+        let name = &s[..name_end];
+        s = s[name_end..].trim_start();
+        if !s.starts_with('=') {
+            return Err(SafeXmlError::ParseError(format!(
+                "Malformed XML declaration attribute '{}'",
+                name
+            )));
+        }
+        s = s[1..].trim_start();
+        let quote = match s.chars().next() {
+            Some(q @ ('\'' | '"')) => q,
+            _ => {
+                return Err(SafeXmlError::ParseError(
+                    "Unquoted attribute in XML declaration".to_string(),
+                ))
+            }
+        };
+        s = &s[1..];
+        let val_end = match s.find(quote) {
+            Some(pos) => pos,
+            None => {
+                return Err(SafeXmlError::ParseError(
+                    "Unclosed quote in XML declaration".to_string(),
+                ))
+            }
+        };
+        let val = &s[..val_end];
+        s = &s[val_end + 1..];
+
+        match name {
+            "version" => {
+                if seen_version || seen_encoding || seen_standalone {
+                    return Err(SafeXmlError::ParseError(
+                        "version must be the first attribute in XML declaration".to_string(),
+                    ));
+                }
+                if val != "1.0" && val != "1.1" {
+                    return Err(SafeXmlError::ParseError(format!(
+                        "Unsupported XML version '{}'",
+                        val
+                    )));
+                }
+                seen_version = true;
+            }
+            "encoding" => {
+                if !seen_version || seen_encoding || seen_standalone {
+                    return Err(SafeXmlError::ParseError(
+                        "encoding must follow version in XML declaration".to_string(),
+                    ));
+                }
+                if !is_valid_enc_name(val) {
+                    return Err(SafeXmlError::ParseError(format!(
+                        "Invalid encoding name '{}' in XML declaration",
+                        val
+                    )));
+                }
+                seen_encoding = true;
+            }
+            "standalone" => {
+                if !seen_version || seen_standalone {
+                    return Err(SafeXmlError::ParseError(
+                        "standalone must appear after version/encoding in XML declaration"
+                            .to_string(),
+                    ));
+                }
+                if val != "yes" && val != "no" {
+                    return Err(SafeXmlError::ParseError(format!(
+                        "Invalid standalone value '{}' in XML declaration",
+                        val
+                    )));
+                }
+                seen_standalone = true;
+            }
+            _ => {
+                return Err(SafeXmlError::ParseError(format!(
+                    "Unknown attribute '{}' in XML declaration",
+                    name
+                )));
+            }
+        }
+
+        if !s.is_empty() {
+            if !s.starts_with(|c: char| c.is_ascii_whitespace()) {
+                return Err(SafeXmlError::ParseError(
+                    "Whitespace required between attributes in XML declaration".to_string(),
+                ));
+            }
+            s = s.trim_start();
+        }
+    }
+
+    if !seen_version {
+        return Err(SafeXmlError::ParseError(
+            "version is required in XML declaration".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_attribute_whitespace(tag_str: &str) -> Result<(), SafeXmlError> {
+    let bytes = tag_str.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'/' && bytes[i] != b'>'
+    {
+        i += 1;
+    }
+    while i < bytes.len() {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] == b'/' || bytes[i] == b'>' {
+            break;
+        }
+        while i < bytes.len() && bytes[i] != b'=' && !bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] != b'=' {
+            break;
+        }
+        i += 1;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            break;
+        }
+        let quote = bytes[i];
+        if quote != b'"' && quote != b'\'' {
+            break;
+        }
+        i += 1;
+        while i < bytes.len() && bytes[i] != quote {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            break;
+        }
+        i += 1;
+        if i < bytes.len() {
+            let next = bytes[i];
+            if !next.is_ascii_whitespace() && next != b'/' && next != b'>' {
+                return Err(SafeXmlError::ParseError(
+                    "Whitespace required between attributes".to_string(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn parse_xml_bytes(
     xml_bytes: &[u8],
     options: &ParseOptions,
@@ -301,6 +504,7 @@ pub fn parse_xml_bytes(
     let mut total_text_bytes: usize = 0;
     let mut total_elements: usize = 0;
     let mut state = DocState::Prolog;
+    let mut seen_prolog_token = false;
     let mut doctype_seen = false;
     let mut default_attributes: Vec<AttlistDeclInfo> = Vec::new();
 
@@ -312,13 +516,23 @@ pub fn parse_xml_bytes(
 
         match event {
             Event::Decl(decl) => {
-                if state != DocState::Prolog {
+                if state != DocState::Prolog || seen_prolog_token {
                     return Err(SafeXmlError::ParseError(
-                        "XML declaration not allowed here".to_string(),
+                        "XML declaration not allowed here: must be at start of document"
+                            .to_string(),
                     ));
                 }
-                if let Some(encoding) = decl.encoder() {
-                    reader.get_mut().set_encoding(encoding);
+                seen_prolog_token = true;
+                validate_xml_decl(decl.as_ref())?;
+                if let Some(decl_enc) = decl.encoder() {
+                    let current_enc = reader.get_ref().encoding();
+                    if current_enc != decl_enc {
+                        return Err(SafeXmlError::ParseError(format!(
+                            "Encoding mismatch: stream encoded as {}, but declaration specifies {}",
+                            current_enc.name(),
+                            decl_enc.name()
+                        )));
+                    }
                 }
             }
             Event::DocType(dt) => {
@@ -327,7 +541,14 @@ pub fn parse_xml_bytes(
                         "junk after document element: DOCTYPE declaration not allowed".to_string(),
                     ));
                 }
+                seen_prolog_token = true;
                 doctype_seen = true;
+
+                if !check_doctype_casing(xml_bytes) {
+                    return Err(SafeXmlError::ParseError(
+                        "DOCTYPE keyword must be uppercase 'DOCTYPE'".to_string(),
+                    ));
+                }
 
                 let dt_str = dt.as_ref();
                 let info = doctype::parse_doctype(dt_str);
@@ -388,6 +609,7 @@ pub fn parse_xml_bytes(
                 default_attributes = info.default_attributes;
             }
             Event::Start(start_event) => {
+                seen_prolog_token = true;
                 if state == DocState::Epilog {
                     return Err(SafeXmlError::ParseError(
                         "junk after document element: multiple root elements".to_string(),
@@ -450,6 +672,7 @@ pub fn parse_xml_bytes(
                 }
             }
             Event::Empty(empty_event) => {
+                seen_prolog_token = true;
                 if state == DocState::Epilog {
                     return Err(SafeXmlError::ParseError(
                         "junk after document element: multiple root elements".to_string(),
@@ -506,20 +729,47 @@ pub fn parse_xml_bytes(
                 }
             }
             Event::Comment(c) => {
+                seen_prolog_token = true;
                 let c_str = c.as_ref();
                 if c_str.len() > options.max_comment_size {
                     return Err(SafeXmlError::CommentLimitExceeded(options.max_comment_size));
                 }
-                if c_str.contains("--") {
+                if c_str.contains("--") || c_str.ends_with('-') {
                     return Err(SafeXmlError::ParseError(
-                        "Comment cannot contain '--'".to_string(),
+                        "Comment cannot contain '--' and cannot end with '-'".to_string(),
+                    ));
+                }
+                if !c_str.chars().all(is_xml_char) {
+                    return Err(SafeXmlError::ParseError(
+                        "Invalid XML character in comment".to_string(),
                     ));
                 }
             }
+            Event::PI(pi) => {
+                seen_prolog_token = true;
+                let pi_str = pi.as_ref();
+                if !pi_str.chars().all(is_xml_char) {
+                    return Err(SafeXmlError::ParseError(
+                        "Invalid XML character in PI".to_string(),
+                    ));
+                }
+                let target = pi_str.split_whitespace().next().unwrap_or("");
+                if target.is_empty()
+                    || !is_valid_xml_name(target)
+                    || target.contains(':')
+                    || target.eq_ignore_ascii_case("xml")
+                {
+                    return Err(SafeXmlError::ParseError(format!(
+                        "Invalid processing instruction target: '{}'",
+                        target
+                    )));
+                }
+            }
             Event::Text(t) => {
+                seen_prolog_token = true;
                 let text_str = t.as_ref();
                 if state != DocState::InsideDocument {
-                    if !text_str.trim().is_empty() {
+                    if !text_str.chars().all(is_xml_whitespace) {
                         if state == DocState::Epilog {
                             return Err(SafeXmlError::ParseError(
                                 "Junk after document element".to_string(),
@@ -532,6 +782,11 @@ pub fn parse_xml_bytes(
                     }
                     continue;
                 }
+                if text_str.contains("]]>") {
+                    return Err(SafeXmlError::ParseError(
+                        "']]>' not allowed in content".to_string(),
+                    ));
+                }
                 if !text_str.chars().all(is_xml_char) {
                     return Err(SafeXmlError::ParseError(
                         "Invalid XML character in text".to_string(),
@@ -541,6 +796,7 @@ pub fn parse_xml_bytes(
                 append_text_chunk(&mut stack, &normalized, &mut total_text_bytes, options)?;
             }
             Event::CData(cd) => {
+                seen_prolog_token = true;
                 let cdata_str = cd.as_ref();
                 if state != DocState::InsideDocument {
                     return Err(SafeXmlError::ParseError(
@@ -556,17 +812,17 @@ pub fn parse_xml_bytes(
                 append_text_chunk(&mut stack, &normalized, &mut total_text_bytes, options)?;
             }
             Event::GeneralRef(r) => {
+                seen_prolog_token = true;
+                let ref_str = r.as_ref();
                 if state != DocState::InsideDocument {
                     return Err(SafeXmlError::ParseError(
                         "Entity reference outside document element".to_string(),
                     ));
                 }
-                let ref_str = r.as_ref();
                 let expanded = resolve_entity_reference(ref_str, options)?;
                 append_text_chunk(&mut stack, &expanded, &mut total_text_bytes, options)?;
             }
             Event::Eof => break,
-            _ => {}
         }
         buf.clear();
     }
@@ -592,6 +848,7 @@ fn process_element_and_attributes(
     options: &ParseOptions,
     default_attributes: &[AttlistDeclInfo],
 ) -> Result<(String, Vec<(String, String)>), SafeXmlError> {
+    validate_attribute_whitespace(event.as_ref())?;
     let mut total_attr_count = 0;
 
     // 1. Process namespace declarations (xmlns and xmlns:*) and check attribute limits
