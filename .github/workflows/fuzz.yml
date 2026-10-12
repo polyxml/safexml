@@ -1,0 +1,59 @@
+name: Nightly Fuzzing & Sanitizers
+
+on:
+  schedule:
+    # Run every night at 02:00 UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: 'Duration to fuzz in seconds'
+        required: false
+        default: '600'
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Nightly ASan / UBSan libFuzzer Campaign
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Rust nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Seed initial corpus
+        run: |
+          mkdir -p fuzz/corpus/fuzz_parser
+          cp fuzz/seeds/*.xml fuzz/corpus/fuzz_parser/ || true
+
+      - name: Run libFuzzer with AddressSanitizer and XML dictionary
+        run: |
+          DURATION="${{ github.event.inputs.duration_seconds || '1800' }}"
+          echo "Starting fuzzing campaign for ${DURATION}s..."
+          cargo +nightly fuzz run fuzz_parser -- \
+            -dict=fuzz/xml.dict \
+            -max_total_time="${DURATION}" \
+            -print_final_stats=1
+
+      - name: Archive crash artifacts if found
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-artifacts
+          path: |
+            fuzz/artifacts/
+            crash-*
+            leak-*
+            timeout-*
