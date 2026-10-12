@@ -1,0 +1,9 @@
+homepage: "https://github.com/polyxml/safexml"
+language: rust
+primary_contact: "bailey.tan.nguyen@gmail.com"
+auto_ccs:
+  - "bailey.tan.nguyen@gmail.com"
+sanitizers:
+  - address
+  - undefined
+main_repo: "https://github.com/polyxml/safexml.git"

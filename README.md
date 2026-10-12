@@ -247,6 +247,17 @@ For benchmark data and attack reproduction suites, see the **[Industrial Validat
 
 ---
 
+## ⚡ Continuous Structure-Aware Fuzzing & Sanitizers
+
+SafeXML incorporates continuous fuzz testing to guarantee memory safety and zero panics across arbitrary inputs and parameter configurations:
+
+- **Structure-Aware libFuzzer**: Randomized `ParseOptions` fuzz target (`fuzz/fuzz_targets/fuzz_parser.rs`) exploring permutations of depth limits, attribute bounds, and DTD permissions.
+- **XML Syntax Dictionary**: Seeded with `fuzz/xml.dict` containing XML grammar tokens, DTD specifiers, namespace declarations, and known attack strings.
+- **Nightly Sanitizer Pipeline**: Automated GitHub Actions workflow (`.github/workflows/fuzz.yml`) running libFuzzer under **AddressSanitizer (ASan)** and **UndefinedBehaviorSanitizer (UBSan)** with crash artifact archiving.
+- **Google OSS-Fuzz**: Integration manifests prepared in `oss-fuzz/` for 24/7 continuous distributed cluster fuzzing.
+
+---
+
 ## 🏗️ Architectural Distinction: `safexml` vs `polyxml`
 
 Both projects are maintained by the **[PolyXML](https://github.com/polyxml)** organization:

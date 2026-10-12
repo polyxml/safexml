@@ -1,0 +1,5 @@
+<root xmlns="http://example.com/ns" xmlns:a="http://example.com/a">
+  <a:child id="1"><![CDATA[raw & unescaped text]]></a:child>
+  <!-- comment token -->
+  <empty/>
+</root>
