@@ -49,8 +49,33 @@ jobs:
       - name: Run Rust tests
         run: cargo test --no-default-features
 
-      - name: Verify fuzz target
+      - name: Verify fuzz target compilation
         run: cargo check --manifest-path fuzz/Cargo.toml
+
+  fuzz-smoke:
+    name: libFuzzer ASan Smoke Test
+    needs: rust-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Seed initial corpus
+        run: |
+          mkdir -p fuzz/corpus/fuzz_parser
+          cp fuzz/seeds/*.xml fuzz/corpus/fuzz_parser/ || true
+
+      - name: Run 15s libFuzzer smoke test with AddressSanitizer and XML dictionary
+        run: |
+          cargo +nightly fuzz run fuzz_parser -- \
+            -dict=fuzz/xml.dict \
+            -max_total_time=15 \
+            -print_final_stats=1
 
   python-test:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
@@ -88,8 +113,12 @@ jobs:
           ruff check python tests benchmarks scripts
           ruff format --check python tests benchmarks scripts
 
-      - name: Run pytest
-        run: pytest -v
+      - name: Run pytest with 100% statement and branch coverage enforcement
+        run: pytest -v --cov=safexml --cov-branch --cov-fail-under=100
+
+      - name: Run W3C XML Conformance Test Suite (XMLTS 20130923)
+        if: runner.os == 'Linux'
+        run: python scripts/run_w3c_conformance.py
 
       - name: Run differential fuzzing smoke test
         run: python scripts/run_differential_fuzz.py --iterations 1000 --seed 42
