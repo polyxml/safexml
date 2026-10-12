@@ -85,11 +85,14 @@ jobs:
 
       - name: Lint Python with Ruff
         run: |
-          ruff check python tests benchmarks
-          ruff format --check python tests benchmarks
+          ruff check python tests benchmarks scripts
+          ruff format --check python tests benchmarks scripts
 
       - name: Run pytest
         run: pytest -v
+
+      - name: Run differential fuzzing smoke test
+        run: python scripts/run_differential_fuzz.py --iterations 1000 --seed 42
 
   version-parity:
     name: Version Parity Check
