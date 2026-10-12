@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/polyxml/safexml/compare/v1.1.0...v1.1.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ci:** align wheel publish workflow with PyPI trusted publisher config (release.yml) ([#18](https://github.com/polyxml/safexml/issues/18)) ([3ec4c53](https://github.com/polyxml/safexml/commit/3ec4c53db33fc385afa7027d8d835b16b6c9a61b))
+
 # [1.1.0](https://github.com/polyxml/safexml/compare/v1.0.2...v1.1.0) (2026-10-12)
 
 
