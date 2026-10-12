@@ -1,70 +1,161 @@
-name: Release & Version Roll
+name: Release Python Wheels (PyPI)
 
 concurrency:
-  group: release-safexml
+  group: release-pypi-${{ github.ref_name || github.ref }}
   cancel-in-progress: false
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    branches: [main]
-    types:
-      - completed
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
-  release:
-    name: Semantic Release & Version Roll
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+  linux:
+    name: Build Linux Wheels (${{ matrix.target }})
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: write
-      issues: write
-      pull-requests: write
-      id-token: write
-
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Python
-        uses: actions/setup-python@v7
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-
-      - name: Run Semantic Release
-        id: semantic
-        uses: cycjimmy/semantic-release-action@v6
-        with:
-          extra_plugins: |
-            @semantic-release/changelog
-            @semantic-release/git
-            @semantic-release/exec
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Dispatch Downstream Package Releases
-        if: steps.semantic.outputs.new_release_published == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-          HAS_PAT: ${{ secrets.PAT_TOKEN != '' }}
+      - name: Sync Tag Version Across Manifests
+        shell: bash
         run: |
-          if [ "$HAS_PAT" = "true" ]; then
-            echo "Release was published with PAT_TOKEN; downstream 'on: release' workflows are automatically triggered by GitHub. Skipping manual dispatch to prevent duplicate builds."
-            exit 0
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_VER="${GITHUB_REF_NAME#v}"
+            echo "Synchronizing version from tag to: $TAG_VER"
+            python scripts/sync_version.py --set "$TAG_VER"
           fi
-          NEW_TAG="v${{ steps.semantic.outputs.new_release_version }}"
-          echo "Dispatching release-pypi.yml for $NEW_TAG (fallback when running without PAT)..."
-          gh workflow run release-pypi.yml --ref "$NEW_TAG" || echo "Note: release-pypi.yml dispatch skipped or handled by release event"
+      - name: Build Wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          sccache: 'true'
+          manylinux: auto
+      - name: Upload Wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-linux-${{ matrix.target }}
+          path: dist
+
+  windows:
+    name: Build Windows Wheels (${{ matrix.target }})
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target: [x64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Sync Tag Version Across Manifests
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_VER="${GITHUB_REF_NAME#v}"
+            echo "Synchronizing version from tag to: $TAG_VER"
+            python scripts/sync_version.py --set "$TAG_VER"
+          fi
+      - name: Build Wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          sccache: 'true'
+      - name: Upload Wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-windows-${{ matrix.target }}
+          path: dist
+
+  macos:
+    name: Build macOS Wheels (${{ matrix.target }})
+    runs-on: macos-14
+    strategy:
+      matrix:
+        target: [x86_64-apple-darwin, aarch64-apple-darwin]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Sync Tag Version Across Manifests
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_VER="${GITHUB_REF_NAME#v}"
+            echo "Synchronizing version from tag to: $TAG_VER"
+            python scripts/sync_version.py --set "$TAG_VER"
+          fi
+      - name: Build Wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          sccache: 'true'
+      - name: Upload Wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-macos-${{ matrix.target }}
+          path: dist
+
+  sdist:
+    name: Build Source Distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Sync Tag Version Across Manifests
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_VER="${GITHUB_REF_NAME#v}"
+            echo "Synchronizing version from tag to: $TAG_VER"
+            python scripts/sync_version.py --set "$TAG_VER"
+          fi
+      - name: Build Source Distribution
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - name: Upload sdist
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-sdist
+          path: dist
+
+  publish:
+    name: Publish to PyPI
+    needs: [linux, windows, macos, sdist]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/safexml
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: wheels-*
+          merge-multiple: true
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
+
