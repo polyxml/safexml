@@ -235,6 +235,18 @@ For the complete breakdown and specification details, see the **[W3C Conformance
 
 ---
 
+## 🏭 Industrial Schema & Adversarial Payload Hardening
+
+SafeXML is validated against real-world enterprise schemas and payloads aggregated in **[polyxml/polyxml-schema-corpus](https://github.com/polyxml/polyxml-schema-corpus)** across 18 critical industries:
+
+- **Battle-Tested Domains**: SAML 2.0 Identity, AS4 ebMS3 B2B Messaging, ISDA FpML 5.12 Derivatives, ISO 20022 SEPA Banking, HL7 FHIR R4 & CDA R2.1 Healthcare, OASIS UBL 2.1 Invoicing, NATO/DoD UCI 2.5 Defense, and ICAO/FAA FIXM 4.0 Aviation.
+- **SAML & AS4 Adversarial Hardening**: Zero-trust defense against XXE injection, exponential entity expansion, quadratic blowup, and attribute-flood DoS payloads injected directly into authentication tokens and SOAP envelopes.
+- **Large-Document Throughput**: Up to **43 MB/s single-threaded throughput** and **1.4x to 1.66x multi-threaded concurrency speedup** over `defusedxml` on multi-megabyte schemas.
+
+For benchmark data and attack reproduction suites, see the **[Industrial Validation Report](docs/INDUSTRIAL_VALIDATION.md)**.
+
+---
+
 ## 🏗️ Architectural Distinction: `safexml` vs `polyxml`
 
 Both projects are maintained by the **[PolyXML](https://github.com/polyxml)** organization:

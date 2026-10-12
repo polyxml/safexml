@@ -31,7 +31,7 @@ Namespace declaration values skip `max_attribute_size` and declaration counts sk
 Reproduction:
 
 ```python
-xml = '<r xmlns="' + 'x' * 16384 + '">' + '<c/>' * 2000 + '</r>'
+xml = '<r xmlns="' + "x" * 16384 + '">' + "<c/>" * 2000 + "</r>"
 r = safexml.fromstring(xml, max_attributes=0, max_attribute_size=1)
 sum(len(e.tag) for e in r.iter())
 ```
