@@ -71,17 +71,25 @@ def test_industrial_schemas_dom_parity() -> None:
 
 def test_industrial_instance_documents_dom_parity() -> None:
     """Verify DOM parity on real-world industrial XML instance payloads."""
+    bundled_dir = Path(__file__).parent / "data/industrial_instances"
     instance_files = [
+        bundled_dir / "uci_entity.xml",
+        bundled_dir / "pacs_008_customer_credit_transfer.xml",
+        bundled_dir / "siri_vehicle_monitoring.xml",
         DEFENSE_DIR / "data/uci_entity.xml",
         FINANCE_DIR / "data/pacs_008_customer_credit_transfer.xml",
         TRANSIT_DIR / "data/siri_vehicle_monitoring.xml",
     ]
 
     tested_count = 0
+    seen_payloads = set()
     for inst_path in instance_files:
         if not inst_path.exists():
             continue
         data = inst_path.read_bytes()
+        if data in seen_payloads:
+            continue
+        seen_payloads.add(data)
         safe_tree = safexml.fromstring(data)
         std_tree = std_ET.fromstring(data)
         assert_dom_equal(safe_tree, std_tree)

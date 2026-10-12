@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.10">
+  <GrpHdr>
+    <MsgId>MSG-20260920-FEDNOW-883492</MsgId>
+    <CreDtTm>2026-09-20T14:30:00Z</CreDtTm>
+    <NbOfTxs>1</NbOfTxs>
+    <SttlmInf>
+      <SettlementMethod>CLRG</SettlementMethod>
+      <ClearingSystem>FEDNOW_INSTANT</ClearingSystem>
+    </SttlmInf>
+  </GrpHdr>
+  <CdtTrfTxInf>
+    <PmtId>
+      <InstructionId>INSTR-20260920-0012489</InstructionId>
+      <EndToEndId>E2E-STRIPE-PAY-99381024</EndToEndId>
+      <TransactionId>TXN-FEDNOW-77192401</TransactionId>
+      <UETR>c02a781b-5e3b-4652-9b2f-3d204739501a</UETR>
+    </PmtId>
+    <IntrBkSttlmAmt>
+      <Currency>USD</Currency>
+      <Value>250000.0</Value>
+    </IntrBkSttlmAmt>
+    <IntrBkSttlmDt>2026-09-20</IntrBkSttlmDt>
+    <ChargeBearer>SLEV</ChargeBearer>
+    <Dbtr>
+      <Name>Acme Global Manufacturing LLC</Name>
+      <PostalAddress>
+        <StreetName>500 Madison Avenue</StreetName>
+        <BuildingNumber>Suite 3400</BuildingNumber>
+        <PostCode>10022</PostCode>
+        <TownName>New York</TownName>
+        <Country>US</Country>
+      </PostalAddress>
+      <CountryOfResidence>US</CountryOfResidence>
+    </Dbtr>
+    <DbtrAcct>
+      <Id>
+        <ProprietaryAccount>009182736451</ProprietaryAccount>
+      </Id>
+      <Currency>USD</Currency>
+      <Name>Acme Treasury USD Account</Name>
+    </DbtrAcct>
+    <DbtrAgt>
+      <FinInstnId>
+        <BICFI>CHASUS33XXX</BICFI>
+        <ClearingSystemMemberId>
+          <ClearingSystemId>USABA</ClearingSystemId>
+          <MemberId>021000021</MemberId>
+        </ClearingSystemMemberId>
+        <Name>JPMorgan Chase Bank, N.A.</Name>
+      </FinInstnId>
+    </DbtrAgt>
+    <CdtrAgt>
+      <FinInstnId>
+        <BICFI>IRVTUS3NXXX</BICFI>
+        <ClearingSystemMemberId>
+          <ClearingSystemId>USABA</ClearingSystemId>
+          <MemberId>021000018</MemberId>
+        </ClearingSystemMemberId>
+        <Name>The Bank of New York Mellon</Name>
+      </FinInstnId>
+    </CdtrAgt>
+    <Cdtr>
+      <Name>Horizon Maritime Logistics International</Name>
+      <PostalAddress>
+        <StreetName>100 Commercial Wharf</StreetName>
+        <BuildingNumber>Pier 4</BuildingNumber>
+        <PostCode>02110</PostCode>
+        <TownName>Boston</TownName>
+        <Country>US</Country>
+      </PostalAddress>
+      <CountryOfResidence>US</CountryOfResidence>
+    </Cdtr>
+    <CdtrAcct>
+      <Id>
+        <ProprietaryAccount>883719204918</ProprietaryAccount>
+      </Id>
+      <Currency>USD</Currency>
+      <Name>Horizon Fleet Operations Settlement</Name>
+    </CdtrAcct>
+    <Purpose>SUPP</Purpose>
+    <RmtInf>
+      <Unstructured>INV-2026-09-8812 - Transatlantic Fleet Fueling Contract Batch #4</Unstructured>
+    </RmtInf>
+  </CdtTrfTxInf>
+</Document>
+
