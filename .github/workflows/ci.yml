@@ -113,6 +113,9 @@ jobs:
           ruff check python tests benchmarks scripts
           ruff format --check python tests benchmarks scripts
 
+      - name: Typecheck Python with mypy
+        run: mypy --strict python/safexml
+
       - name: Run pytest with 100% statement and branch coverage enforcement
         run: pytest -v --cov=safexml --cov-branch --cov-fail-under=100
 

@@ -128,6 +128,7 @@ pub fn parse_doctype(s: &str) -> DocTypeInfo {
         .take_while(|c| !c.is_whitespace() && c != '[' && c != '>')
         .to_string();
 
+    let mut subset_start: Option<usize> = None;
     while !scanner.is_eof() {
         scanner.skip_whitespace();
         if scanner.is_eof() {
@@ -136,6 +137,7 @@ pub fn parse_doctype(s: &str) -> DocTypeInfo {
 
         if scanner.starts_with("[") {
             info.has_internal_subset = true;
+            subset_start = Some(scanner.cursor);
             break;
         }
 
@@ -158,11 +160,10 @@ pub fn parse_doctype(s: &str) -> DocTypeInfo {
     }
 
     // Parse internal subset if present
-    if let Some(subset_start) = s.find('[') {
-        info.has_internal_subset = true;
+    if let Some(sub_start) = subset_start {
         if let Some(subset_end) = s.rfind(']') {
-            if subset_start < subset_end {
-                let subset = &s[subset_start + 1..subset_end];
+            if sub_start < subset_end {
+                let subset = &s[sub_start + 1..subset_end];
                 parse_internal_subset(subset, &mut info.entities, &mut info.default_attributes);
             }
         }
@@ -256,37 +257,69 @@ fn parse_internal_subset(
             let elem_name = scanner
                 .take_while(|c| !c.is_whitespace() && c != '>')
                 .to_string();
-            scanner.skip_whitespace();
-            let attr_name = scanner
-                .take_while(|c| !c.is_whitespace() && c != '>')
-                .to_string();
-            scanner.skip_whitespace();
-            // attribute type (e.g. CDATA, ID, etc.)
-            let _attr_type = scanner
-                .take_while(|c| !c.is_whitespace() && c != '>')
-                .to_string();
-            scanner.skip_whitespace();
 
-            if scanner.starts_with("#FIXED") {
-                scanner.cursor += 6;
+            while !scanner.is_eof() {
                 scanner.skip_whitespace();
-            }
-
-            if scanner.starts_with("#REQUIRED") || scanner.starts_with("#IMPLIED") {
-                // no default
-            } else if let Some(val) = scanner.expect_quoted() {
-                if !elem_name.is_empty() && !attr_name.is_empty() {
-                    default_attrs.push(AttlistDeclInfo {
-                        element_name: elem_name,
-                        attribute_name: attr_name,
-                        default_value: val,
-                    });
+                if scanner.is_eof() || scanner.starts_with(">") {
+                    break;
                 }
-            }
+                let attr_name = scanner
+                    .take_while(|c| !c.is_whitespace() && c != '>')
+                    .to_string();
+                if attr_name.is_empty() {
+                    break;
+                }
+                scanner.skip_whitespace();
+                if scanner.is_eof() || scanner.starts_with(">") {
+                    break;
+                }
+                // attribute type (e.g. CDATA, ID, NOTATION (...), or enumeration (...))
+                if scanner.starts_with("NOTATION") {
+                    scanner.cursor += 8;
+                    scanner.skip_whitespace();
+                }
+                if scanner.starts_with("(") {
+                    scanner.next_char();
+                    while let Some(c) = scanner.next_char() {
+                        if c == ')' || c == '>' {
+                            break;
+                        }
+                    }
+                } else {
+                    let _attr_type = scanner
+                        .take_while(|c| !c.is_whitespace() && c != '>')
+                        .to_string();
+                }
+                scanner.skip_whitespace();
+                if scanner.is_eof() || scanner.starts_with(">") {
+                    break;
+                }
 
-            // advance to '>'
-            while !scanner.is_eof() && !scanner.starts_with(">") {
-                scanner.next_char();
+                if scanner.starts_with("#FIXED") {
+                    scanner.cursor += 6;
+                    scanner.skip_whitespace();
+                }
+
+                if scanner.starts_with("#REQUIRED") {
+                    scanner.cursor += 9;
+                } else if scanner.starts_with("#IMPLIED") {
+                    scanner.cursor += 8;
+                } else if scanner.starts_with("\"") || scanner.starts_with("'") {
+                    if let Some(val) = scanner.expect_quoted() {
+                        if !elem_name.is_empty() && !attr_name.is_empty() {
+                            default_attrs.push(AttlistDeclInfo {
+                                element_name: elem_name.clone(),
+                                attribute_name: attr_name,
+                                default_value: val,
+                            });
+                        }
+                    }
+                } else {
+                    while !scanner.is_eof() && !scanner.starts_with(">") {
+                        scanner.next_char();
+                    }
+                    break;
+                }
             }
             if scanner.starts_with(">") {
                 scanner.next_char();

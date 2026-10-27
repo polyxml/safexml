@@ -73,10 +73,59 @@ def test_fromstring_parser_keyword_argument() -> None:
 
 
 def test_pep561_py_typed_marker() -> None:
-    """Package must include PEP 561 `py.typed` marker for static type checkers (mypy/pyright)."""
+    """Package must include PEP 561 `py.typed` marker and `_safexml.pyi` stub for static type checkers."""
+    import mypy.api
+
     safexml_pkg = pathlib.Path(safexml.__file__).parent
     py_typed = safexml_pkg / "py.typed"
+    stub_file = safexml_pkg / "_safexml.pyi"
     assert py_typed.is_file(), f"Missing PEP 561 marker at {py_typed}"
+    assert stub_file.is_file(), f"Missing type stub at {stub_file}"
+
+    stdout, stderr, exit_code = mypy.api.run(["--strict", str(safexml_pkg)])
+    assert exit_code == 0, f"mypy --strict failed:\n{stdout}\n{stderr}"
+
+
+def test_multi_attribute_and_enumerated_attlist_defaults() -> None:
+    """DOCTYPE ATTLIST must support multiple attribute definitions, enumerated types, and default xmlns."""
+    xml = (
+        "<!DOCTYPE root [\n"
+        "  <!ATTLIST root\n"
+        '    xmlns CDATA "urn:test"\n'
+        '    mode (fast | safe) "safe"\n'
+        '    version CDATA #FIXED "1.0"\n'
+        "    optional CDATA #IMPLIED\n"
+        '    extra CDATA "ok">\n'
+        "]>\n"
+        "<root/>"
+    )
+    root = ET.fromstring(xml)
+    assert root.tag == "{urn:test}root"
+    assert root.attrib["mode"] == "safe"
+    assert root.attrib["version"] == "1.0"
+    assert root.attrib["extra"] == "ok"
+    assert "optional" not in root.attrib
+
+
+def test_encoding_declaration_whitespace_around_equals() -> None:
+    """XML declaration with whitespace around '=' in encoding attribute must be detected properly."""
+    raw = b'<?xml version = "1.0" encoding = "ISO-8859-1"?><r>caf\xe9</r>'
+    root = ET.fromstring(raw)
+    assert root.text == "café"
+
+
+def test_doctype_casing_ignores_comments_and_pis() -> None:
+    """Lowercase '<!doctype' inside comments or PIs must not trigger false-positive casing errors."""
+    xml = "<!-- <!doctype html> --><?pi <!doctype html>?><!DOCTYPE r><r><!-- <!doctype x> --></r>"
+    root = ET.fromstring(xml)
+    assert root.tag == "r"
+
+
+def test_doctype_brackets_in_system_literal() -> None:
+    """Brackets inside quoted SYSTEM/PUBLIC literals must not be mistaken for an internal subset."""
+    xml = '<!DOCTYPE r SYSTEM "http://example.com/dtd[1].dtd"><r/>'
+    root = ET.fromstring(xml, forbid_external=False)
+    assert root.tag == "r"
 
 
 def test_fromstringlist_support() -> None:

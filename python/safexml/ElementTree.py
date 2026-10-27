@@ -77,19 +77,35 @@ class XMLParser:
         self.max_comment_size = max_comment_size
         self.max_input_size = max_input_size
         self.max_elements = max_elements
-        self._data: list[str | bytes] = []
+        self._str_data: list[str] = []
+        self._bytes_data: list[bytes] = []
+        self._total_size: int = 0
 
     def feed(self, data: str | bytes) -> None:
-        self._data.append(data)
+        chunk_size = len(data.encode("utf-8")) if isinstance(data, str) else len(data)
+        if self._total_size + chunk_size > self.max_input_size:
+            self._str_data.clear()
+            self._bytes_data.clear()
+            self._total_size = 0
+            raise DefusedXmlException(
+                f"Input document size exceeds maximum allowed limit ({self.max_input_size} bytes)"
+            )
+        self._total_size += chunk_size
+        if isinstance(data, str):
+            self._str_data.append(data)
+        else:
+            self._bytes_data.append(data)
 
     def close(self) -> Element:
-        if not self._data:
-            combined: str | bytes = ""
-        elif isinstance(self._data[0], str):
-            combined = "".join(self._data)  # type: ignore[arg-type]
+        if self._str_data:
+            combined: str | bytes = "".join(self._str_data)
+        elif self._bytes_data:
+            combined = b"".join(self._bytes_data)
         else:
-            combined = b"".join(self._data)  # type: ignore[arg-type]
-        self._data.clear()
+            combined = ""
+        self._str_data.clear()
+        self._bytes_data.clear()
+        self._total_size = 0
 
         return _parse_xml(
             combined,
@@ -121,7 +137,10 @@ class ElementTree(_StdlibElementTree):
     ) -> None:
         super().__init__(element=element, file=file)
 
-    def parse(
+    def getroot(self) -> Element:
+        return super().getroot()  # type: ignore[return-value]
+
+    def parse(  # type: ignore[override]
         self,
         source: str | bytes | os.PathLike[Any] | IO[Any],
         parser: Any | None = None,

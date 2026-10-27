@@ -20,10 +20,11 @@ import pytest
 
 import safexml
 
-CORPUS_DIR = Path("/home/xenah/github/polyxml-schema-corpus")
-DEFENSE_DIR = Path("/home/xenah/github/polyxml-defense-examples")
-FINANCE_DIR = Path("/home/xenah/github/polyxml-finance-examples")
-TRANSIT_DIR = Path("/home/xenah/github/polyxml-transit-examples")
+_WORKSPACE_DIR = Path(__file__).resolve().parents[2]
+CORPUS_DIR = _WORKSPACE_DIR / "polyxml-schema-corpus"
+DEFENSE_DIR = _WORKSPACE_DIR / "polyxml-defense-examples"
+FINANCE_DIR = _WORKSPACE_DIR / "polyxml-finance-examples"
+TRANSIT_DIR = _WORKSPACE_DIR / "polyxml-transit-examples"
 
 
 def assert_dom_equal(safe_elem: std_ET.Element, std_elem: std_ET.Element) -> None:

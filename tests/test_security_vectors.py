@@ -393,3 +393,47 @@ def test_deep_nesting_wrappers_no_recursion_error() -> None:
     # Minidom
     doc = safexml.minidom.parseString(xml)
     assert doc.documentElement.tagName == "r"
+
+
+def test_attlist_default_attribute_security_limits() -> None:
+    """ATTLIST default attributes must enforce entity, size, count, name, and character restrictions."""
+    from safexml.common import ParseError
+
+    # Entity reference inside ATTLIST default value blocked when forbid_entities=True
+    with pytest.raises(EntitiesForbidden):
+        ET.fromstring('<!DOCTYPE r [<!ATTLIST r a CDATA "&evil;">]><r/>')
+
+    # Oversized default attribute value rejected by max_attribute_size
+    big_val = "A" * 200
+    with pytest.raises(DefusedXmlException, match="maximum size limit"):
+        ET.fromstring(
+            f'<!DOCTYPE r [<!ATTLIST r a CDATA "{big_val}">]><r/>',
+            max_attribute_size=50,
+        )
+
+    # Default attributes counted toward max_attributes
+    with pytest.raises(DefusedXmlException, match="attribute count limit"):
+        ET.fromstring(
+            '<!DOCTYPE r [<!ATTLIST r a CDATA "1" b CDATA "2" c CDATA "3">]><r/>',
+            max_attributes=2,
+        )
+
+    # Oversized attribute name in ATTLIST rejected by max_name_size
+    long_name = "attr_" + "x" * 100
+    with pytest.raises(DefusedXmlException, match="maximum length limit"):
+        ET.fromstring(
+            f'<!DOCTYPE r [<!ATTLIST r {long_name} CDATA "1">]><r/>',
+            max_name_size=20,
+        )
+
+    # Unescaped '<' in ATTLIST default value rejected
+    with pytest.raises(ParseError, match="Attribute value contains unescaped"):
+        ET.fromstring('<!DOCTYPE r [<!ATTLIST r a CDATA "<script>">]><r/>')
+
+
+def test_xmlparser_feed_input_size_limit() -> None:
+    """XMLParser.feed() must enforce max_input_size immediately before buffering unbounded data."""
+    parser = ET.XMLParser(max_input_size=20)
+    parser.feed("<root>")
+    with pytest.raises(DefusedXmlException, match="exceeds maximum allowed limit"):
+        parser.feed("A" * 50)

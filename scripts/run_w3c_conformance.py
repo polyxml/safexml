@@ -55,7 +55,7 @@ def ensure_corpus(corpus_dir: Path) -> Path:
 
     print(f"Extracting {archive_path} to {corpus_dir.parent}...")
     with tarfile.open(archive_path, "r:gz") as tar:
-        tar.extractall(corpus_dir.parent)
+        tar.extractall(corpus_dir.parent, filter="data")
 
     if not xmlconf_file.exists():
         msg = f"Failed to locate {xmlconf_file} after extraction."

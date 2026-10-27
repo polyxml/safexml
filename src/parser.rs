@@ -1,7 +1,7 @@
 use crate::doctype::{self, AttlistDeclInfo};
 use quick_xml::encoding::DecodingReader;
 use quick_xml::events::Event;
-use quick_xml::name::{Namespace, NamespaceResolver, PrefixDeclaration, ResolveResult};
+use quick_xml::name::{Namespace, NamespaceResolver, PrefixDeclaration, QName, ResolveResult};
 use quick_xml::reader::Reader;
 
 #[derive(Debug, Clone, Default)]
@@ -269,16 +269,29 @@ fn detect_declared_encoding(xml_bytes: &[u8]) -> Option<&'static encoding_rs::En
     }
     let end = xml_bytes.iter().position(|&b| b == b'>')?;
     let header = std::str::from_utf8(&xml_bytes[..end]).ok()?;
-    let enc_start = header.find("encoding=")?;
-    let rest = &header[enc_start + 9..];
-    let quote = rest.chars().next()?;
-    if quote != '"' && quote != '\'' {
-        return None;
+    let mut search = &header[5..];
+    while let Some(pos) = search.find("encoding") {
+        let before_ok = pos == 0
+            || search[..pos]
+                .chars()
+                .next_back()
+                .is_some_and(is_xml_whitespace);
+        let after = &search[pos + 8..];
+        let after_trimmed = after.trim_start_matches(is_xml_whitespace);
+        if before_ok && after_trimmed.starts_with('=') {
+            let val_part = after_trimmed[1..].trim_start_matches(is_xml_whitespace);
+            let quote = val_part.chars().next()?;
+            if quote != '"' && quote != '\'' {
+                return None;
+            }
+            let rest = &val_part[1..];
+            let enc_end = rest.find(quote)?;
+            let enc_name = &rest[..enc_end];
+            return encoding_rs::Encoding::for_label(enc_name.as_bytes());
+        }
+        search = after;
     }
-    let rest = &rest[1..];
-    let enc_end = rest.find(quote)?;
-    let enc_name = &rest[..enc_end];
-    encoding_rs::Encoding::for_label(enc_name.as_bytes())
+    None
 }
 
 fn is_xml_whitespace(c: char) -> bool {
@@ -288,10 +301,26 @@ fn is_xml_whitespace(c: char) -> bool {
 fn check_doctype_casing(bytes: &[u8]) -> bool {
     let mut i = 0;
     while i + 9 <= bytes.len() {
+        if bytes[i..].starts_with(b"<!--") {
+            if let Some(end) = bytes[i + 4..].windows(3).position(|w| w == b"-->") {
+                i += 4 + end + 3;
+                continue;
+            } else {
+                break;
+            }
+        }
+        if bytes[i..].starts_with(b"<?") {
+            if let Some(end) = bytes[i + 2..].windows(2).position(|w| w == b"?>") {
+                i += 2 + end + 2;
+                continue;
+            } else {
+                break;
+            }
+        }
         if bytes[i] == b'<' && bytes[i + 1] == b'!' {
             let kw = &bytes[i + 2..i + 9];
-            if kw.eq_ignore_ascii_case(b"DOCTYPE") && kw != b"DOCTYPE" {
-                return false;
+            if kw.eq_ignore_ascii_case(b"DOCTYPE") {
+                return kw == b"DOCTYPE";
             }
         }
         i += 1;
@@ -551,7 +580,7 @@ pub fn parse_xml_bytes(
                 }
 
                 let dt_str = dt.as_ref();
-                let info = doctype::parse_doctype(dt_str);
+                let mut info = doctype::parse_doctype(dt_str);
 
                 if options.forbid_dtd {
                     return Err(SafeXmlError::DTDForbidden {
@@ -604,6 +633,54 @@ pub fn parse_xml_bytes(
                             ));
                         }
                     }
+                }
+
+                for d in &mut info.default_attributes {
+                    if d.element_name.contains('\0') || d.attribute_name.contains('\0') {
+                        return Err(SafeXmlError::ParseError(
+                            "Null byte detected in XML identifier".to_string(),
+                        ));
+                    }
+                    if d.element_name.len() > options.max_name_size
+                        || d.attribute_name.len() > options.max_name_size
+                    {
+                        return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+                    }
+                    if !is_valid_xml_qname(&d.element_name) {
+                        return Err(SafeXmlError::ParseError(format!(
+                            "Illegal XML element name in ATTLIST: {}",
+                            d.element_name
+                        )));
+                    }
+                    if !is_valid_xml_qname(&d.attribute_name) {
+                        return Err(SafeXmlError::ParseError(format!(
+                            "Illegal XML attribute name in ATTLIST: {}",
+                            d.attribute_name
+                        )));
+                    }
+                    if d.default_value.len() > options.max_attribute_size {
+                        return Err(SafeXmlError::AttributeSizeLimitExceeded(
+                            options.max_attribute_size,
+                        ));
+                    }
+                    if d.default_value.contains('<') {
+                        return Err(SafeXmlError::ParseError(
+                            "Attribute value contains unescaped '<'".to_string(),
+                        ));
+                    }
+                    if !d.default_value.chars().all(is_xml_char) {
+                        return Err(SafeXmlError::ParseError(
+                            "Invalid XML character in attribute value".to_string(),
+                        ));
+                    }
+                    let normalized = normalize_attribute_value(&d.default_value);
+                    let unescaped = unescape_attribute_value(&normalized, options)?;
+                    if unescaped.len() > options.max_attribute_size {
+                        return Err(SafeXmlError::AttributeSizeLimitExceeded(
+                            options.max_attribute_size,
+                        ));
+                    }
+                    d.default_value = unescaped;
                 }
 
                 default_attributes = info.default_attributes;
@@ -850,6 +927,7 @@ fn process_element_and_attributes(
 ) -> Result<(String, Vec<(String, String)>), SafeXmlError> {
     validate_attribute_whitespace(event.as_ref())?;
     let mut total_attr_count = 0;
+    let mut explicit_xmlns: Vec<String> = Vec::new();
 
     // 1. Process namespace declarations (xmlns and xmlns:*) and check attribute limits
     for attr in event.attributes() {
@@ -916,6 +994,35 @@ fn process_element_and_attributes(
             resolver
                 .add(binding, Namespace(&unescaped))
                 .map_err(|e| SafeXmlError::ParseError(e.to_string()))?;
+            explicit_xmlns.push(key_str.to_string());
+        }
+    }
+
+    let raw_elem_name = event.name().into_inner();
+    for d in default_attributes {
+        if d.element_name == raw_elem_name
+            && (d.attribute_name == "xmlns" || d.attribute_name.starts_with("xmlns:"))
+            && !explicit_xmlns.iter().any(|k| k == &d.attribute_name)
+        {
+            total_attr_count += 1;
+            if total_attr_count > options.max_attributes {
+                return Err(SafeXmlError::AttributeLimitExceeded(options.max_attributes));
+            }
+            let binding = if d.attribute_name == "xmlns" {
+                PrefixDeclaration::Default
+            } else {
+                let prefix = &d.attribute_name[6..];
+                if prefix.is_empty() {
+                    return Err(SafeXmlError::ParseError(
+                        "Empty namespace prefix declaration".to_string(),
+                    ));
+                }
+                PrefixDeclaration::Named(prefix)
+            };
+            resolver
+                .add(binding, Namespace(&d.default_value))
+                .map_err(|e| SafeXmlError::ParseError(e.to_string()))?;
+            explicit_xmlns.push(d.attribute_name.clone());
         }
     }
 
@@ -1007,12 +1114,38 @@ fn process_element_and_attributes(
     }
 
     // 4. Apply ATTLIST default attributes
-    let raw_elem_name = event.name().into_inner();
     for d in default_attributes {
-        if (d.element_name == raw_elem_name || d.element_name == tag)
-            && !attrib.iter().any(|(k, _)| k == &d.attribute_name)
-        {
-            attrib.push((d.attribute_name.clone(), d.default_value.clone()));
+        if d.element_name == raw_elem_name || d.element_name == tag {
+            if d.attribute_name == "xmlns" || d.attribute_name.starts_with("xmlns:") {
+                continue;
+            }
+            let qname = QName(&d.attribute_name);
+            let (res, local) = resolver.resolve_attribute(qname);
+            let attr_name = match res {
+                ResolveResult::Bound(ns) => format!("{{{}}}{}", ns.0, local.as_ref()),
+                ResolveResult::Unbound => {
+                    if let Some(p) = qname.prefix() {
+                        return Err(SafeXmlError::ParseError(format!(
+                            "unbound prefix: {}",
+                            p.as_ref()
+                        )));
+                    }
+                    local.as_ref().to_string()
+                }
+                ResolveResult::Unknown(p) => {
+                    return Err(SafeXmlError::ParseError(format!("unbound prefix: {}", p)));
+                }
+            };
+            if attr_name.len() > options.max_name_size {
+                return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
+            }
+            if !attrib.iter().any(|(k, _)| k == &attr_name) {
+                total_attr_count += 1;
+                if total_attr_count > options.max_attributes {
+                    return Err(SafeXmlError::AttributeLimitExceeded(options.max_attributes));
+                }
+                attrib.push((attr_name, d.default_value.clone()));
+            }
         }
     }
 

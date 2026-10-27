@@ -20,7 +20,7 @@ import defusedxml.ElementTree as defused_ET
 
 import safexml
 
-CORPUS_DIR = Path("/home/xenah/github/polyxml-schema-corpus/schemas")
+CORPUS_DIR = Path(__file__).resolve().parents[2] / "polyxml-schema-corpus" / "schemas"
 
 
 @dataclass
