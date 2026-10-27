@@ -26,6 +26,7 @@ from safexml.common import (
 from safexml.ElementTree import (
     PI,
     XML,
+    XMLID,
     Comment,
     Element,
     ProcessingInstruction,
@@ -59,6 +60,7 @@ def defuse_stdlib() -> dict[str, object]:
     _stdlib_etree.parse = parse  # type: ignore[assignment]
     _stdlib_etree.iterparse = iterparse  # type: ignore[assignment]
     _stdlib_etree.XML = XML  # type: ignore[assignment]
+    _stdlib_etree.XMLID = XMLID  # type: ignore[assignment]
     _stdlib_etree.XMLParser = XMLParser  # type: ignore[misc,assignment]
     _stdlib_etree.fromstringlist = fromstringlist  # type: ignore[assignment]
 
@@ -104,6 +106,7 @@ __all__ = [
     "SubElement",
     "TreeBuilder",
     "XML",
+    "XMLID",
     "XMLParse",
     "XMLParser",
     "canonicalize",

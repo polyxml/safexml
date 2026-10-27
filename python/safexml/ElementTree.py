@@ -77,34 +77,23 @@ class XMLParser:
         self.max_comment_size = max_comment_size
         self.max_input_size = max_input_size
         self.max_elements = max_elements
-        self._str_data: list[str] = []
-        self._bytes_data: list[bytes] = []
+        self._chunks: list[bytes] = []
         self._total_size: int = 0
 
     def feed(self, data: str | bytes) -> None:
-        chunk_size = len(data.encode("utf-8")) if isinstance(data, str) else len(data)
-        if self._total_size + chunk_size > self.max_input_size:
-            self._str_data.clear()
-            self._bytes_data.clear()
+        raw_bytes = data.encode("utf-8") if isinstance(data, str) else data
+        if self._total_size + len(raw_bytes) > self.max_input_size:
+            self._chunks.clear()
             self._total_size = 0
             raise DefusedXmlException(
                 f"Input document size exceeds maximum allowed limit ({self.max_input_size} bytes)"
             )
-        self._total_size += chunk_size
-        if isinstance(data, str):
-            self._str_data.append(data)
-        else:
-            self._bytes_data.append(data)
+        self._total_size += len(raw_bytes)
+        self._chunks.append(raw_bytes)
 
     def close(self) -> Element:
-        if self._str_data:
-            combined: str | bytes = "".join(self._str_data)
-        elif self._bytes_data:
-            combined = b"".join(self._bytes_data)
-        else:
-            combined = ""
-        self._str_data.clear()
-        self._bytes_data.clear()
+        combined = b"".join(self._chunks)
+        self._chunks.clear()
         self._total_size = 0
 
         return _parse_xml(
@@ -212,6 +201,47 @@ def fromstring(
 
 
 XML = fromstring
+
+
+def XMLID(
+    text: str | bytes,
+    parser: Any | None = None,
+    forbid_dtd: bool = False,
+    forbid_entities: bool = True,
+    forbid_external: bool = True,
+    max_depth: int = 1000,
+    max_entity_size: int = 10 * 1024 * 1024,
+    max_text_size: int = 100 * 1024 * 1024,
+    max_attributes: int = 1000,
+    max_attribute_size: int = 10 * 1024 * 1024,
+    max_name_size: int = 1024,
+    max_comment_size: int = 10 * 1024 * 1024,
+    max_input_size: int = 256 * 1024 * 1024,
+    max_elements: int = 5_000_000,
+) -> tuple[Element, dict[str, Element]]:
+    """Parse XML from a string or bytes and return (root_element, id_dict) safely."""
+    root = fromstring(
+        text,
+        parser=parser,
+        forbid_dtd=forbid_dtd,
+        forbid_entities=forbid_entities,
+        forbid_external=forbid_external,
+        max_depth=max_depth,
+        max_entity_size=max_entity_size,
+        max_text_size=max_text_size,
+        max_attributes=max_attributes,
+        max_attribute_size=max_attribute_size,
+        max_name_size=max_name_size,
+        max_comment_size=max_comment_size,
+        max_input_size=max_input_size,
+        max_elements=max_elements,
+    )
+    ids: dict[str, Element] = {}
+    for elem in root.iter():
+        elem_id = elem.get("id")
+        if elem_id:
+            ids[elem_id] = elem
+    return root, ids
 
 
 def fromstringlist(
@@ -392,6 +422,7 @@ __all__ = [
     "SubElement",
     "TreeBuilder",
     "XML",
+    "XMLID",
     "XMLParse",
     "XMLParser",
     "canonicalize",

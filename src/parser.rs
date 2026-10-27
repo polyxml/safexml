@@ -339,35 +339,40 @@ fn is_valid_enc_name(name: &str) -> bool {
 }
 
 fn validate_xml_decl(decl_str: &str) -> Result<(), SafeXmlError> {
+    if !decl_str.chars().all(is_xml_char) {
+        return Err(SafeXmlError::ParseError(
+            "Invalid XML character in XML declaration".to_string(),
+        ));
+    }
     if !decl_str.starts_with("xml") {
         return Err(SafeXmlError::ParseError(
             "XML declaration must start with 'xml'".to_string(),
         ));
     }
     let rest = &decl_str[3..];
-    if rest.is_empty() || !rest.starts_with(|c: char| c.is_ascii_whitespace()) {
+    if rest.is_empty() || !rest.starts_with(is_xml_whitespace) {
         return Err(SafeXmlError::ParseError(
             "Whitespace required after 'xml' in XML declaration".to_string(),
         ));
     }
-    let mut s = rest.trim_start();
+    let mut s = rest.trim_start_matches(is_xml_whitespace);
     let mut seen_version = false;
     let mut seen_encoding = false;
     let mut seen_standalone = false;
 
     while !s.is_empty() {
         let name_end = s
-            .find(|c: char| c == '=' || c.is_ascii_whitespace())
+            .find(|c: char| c == '=' || is_xml_whitespace(c))
             .unwrap_or(s.len());
         let name = &s[..name_end];
-        s = s[name_end..].trim_start();
+        s = s[name_end..].trim_start_matches(is_xml_whitespace);
         if !s.starts_with('=') {
             return Err(SafeXmlError::ParseError(format!(
                 "Malformed XML declaration attribute '{}'",
                 name
             )));
         }
-        s = s[1..].trim_start();
+        s = s[1..].trim_start_matches(is_xml_whitespace);
         let quote = match s.chars().next() {
             Some(q @ ('\'' | '"')) => q,
             _ => {
@@ -441,12 +446,12 @@ fn validate_xml_decl(decl_str: &str) -> Result<(), SafeXmlError> {
         }
 
         if !s.is_empty() {
-            if !s.starts_with(|c: char| c.is_ascii_whitespace()) {
+            if !s.starts_with(is_xml_whitespace) {
                 return Err(SafeXmlError::ParseError(
                     "Whitespace required between attributes in XML declaration".to_string(),
                 ));
             }
-            s = s.trim_start();
+            s = s.trim_start_matches(is_xml_whitespace);
         }
     }
 
@@ -459,31 +464,34 @@ fn validate_xml_decl(decl_str: &str) -> Result<(), SafeXmlError> {
     Ok(())
 }
 
+fn is_xml_ws_byte(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\r' | b'\n')
+}
+
 fn validate_attribute_whitespace(tag_str: &str) -> Result<(), SafeXmlError> {
     let bytes = tag_str.as_bytes();
     let mut i = 0;
-    while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'/' && bytes[i] != b'>'
-    {
+    while i < bytes.len() && !is_xml_ws_byte(bytes[i]) && bytes[i] != b'/' && bytes[i] != b'>' {
         i += 1;
     }
     while i < bytes.len() {
-        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        while i < bytes.len() && is_xml_ws_byte(bytes[i]) {
             i += 1;
         }
         if i >= bytes.len() || bytes[i] == b'/' || bytes[i] == b'>' {
             break;
         }
-        while i < bytes.len() && bytes[i] != b'=' && !bytes[i].is_ascii_whitespace() {
+        while i < bytes.len() && bytes[i] != b'=' && !is_xml_ws_byte(bytes[i]) {
             i += 1;
         }
-        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        while i < bytes.len() && is_xml_ws_byte(bytes[i]) {
             i += 1;
         }
         if i >= bytes.len() || bytes[i] != b'=' {
             break;
         }
         i += 1;
-        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        while i < bytes.len() && is_xml_ws_byte(bytes[i]) {
             i += 1;
         }
         if i >= bytes.len() {
@@ -503,7 +511,7 @@ fn validate_attribute_whitespace(tag_str: &str) -> Result<(), SafeXmlError> {
         i += 1;
         if i < bytes.len() {
             let next = bytes[i];
-            if !next.is_ascii_whitespace() && next != b'/' && next != b'>' {
+            if !is_xml_ws_byte(next) && next != b'/' && next != b'>' {
                 return Err(SafeXmlError::ParseError(
                     "Whitespace required between attributes".to_string(),
                 ));
@@ -580,7 +588,12 @@ pub fn parse_xml_bytes(
                 }
 
                 let dt_str = dt.as_ref();
-                let mut info = doctype::parse_doctype(dt_str);
+                if !dt_str.chars().all(is_xml_char) {
+                    return Err(SafeXmlError::ParseError(
+                        "Invalid XML character in DOCTYPE".to_string(),
+                    ));
+                }
+                let info = doctype::parse_doctype(dt_str);
 
                 if options.forbid_dtd {
                     return Err(SafeXmlError::DTDForbidden {
@@ -588,6 +601,10 @@ pub fn parse_xml_bytes(
                         sysid: info.system_id,
                         pubid: info.public_id,
                     });
+                }
+
+                if info.name.len() > options.max_name_size {
+                    return Err(SafeXmlError::NameLimitExceeded(options.max_name_size));
                 }
 
                 if options.forbid_external {
@@ -609,20 +626,43 @@ pub fn parse_xml_bytes(
                             });
                         }
                     }
+                    for not in &info.notations {
+                        if not.system_id.is_some() || not.public_id.is_some() {
+                            return Err(SafeXmlError::ExternalReferenceForbidden {
+                                context: None,
+                                base: None,
+                                sysid: not.system_id.clone(),
+                                pubid: not.public_id.clone(),
+                            });
+                        }
+                    }
                 }
 
-                if options.forbid_entities && !info.entities.is_empty() {
-                    let first = &info.entities[0];
-                    return Err(SafeXmlError::EntitiesForbidden(Box::new(
-                        EntityForbiddenDetails {
-                            name: first.name.clone(),
-                            value: first.value.clone(),
-                            base: None,
-                            sysid: first.system_id.clone(),
-                            pubid: first.public_id.clone(),
-                            notation_name: first.notation.clone(),
-                        },
-                    )));
+                if options.forbid_entities {
+                    if let Some(first) = info.entities.first() {
+                        return Err(SafeXmlError::EntitiesForbidden(Box::new(
+                            EntityForbiddenDetails {
+                                name: first.name.clone(),
+                                value: first.value.clone(),
+                                base: None,
+                                sysid: first.system_id.clone(),
+                                pubid: first.public_id.clone(),
+                                notation_name: first.notation.clone(),
+                            },
+                        )));
+                    }
+                    if let Some(pe_name) = info.parameter_entity_refs.first() {
+                        return Err(SafeXmlError::EntitiesForbidden(Box::new(
+                            EntityForbiddenDetails {
+                                name: pe_name.clone(),
+                                value: None,
+                                base: None,
+                                sysid: None,
+                                pubid: None,
+                                notation_name: None,
+                            },
+                        )));
+                    }
                 }
 
                 for ent in &info.entities {
@@ -635,7 +675,8 @@ pub fn parse_xml_bytes(
                     }
                 }
 
-                for d in &mut info.default_attributes {
+                let mut deduped_defaults: Vec<AttlistDeclInfo> = Vec::new();
+                for mut d in info.default_attributes {
                     if d.element_name.contains('\0') || d.attribute_name.contains('\0') {
                         return Err(SafeXmlError::ParseError(
                             "Null byte detected in XML identifier".to_string(),
@@ -681,9 +722,20 @@ pub fn parse_xml_bytes(
                         ));
                     }
                     d.default_value = unescaped;
+                    if !deduped_defaults.iter().any(|existing| {
+                        existing.element_name == d.element_name
+                            && existing.attribute_name == d.attribute_name
+                    }) {
+                        if deduped_defaults.len() >= options.max_attributes {
+                            return Err(SafeXmlError::AttributeLimitExceeded(
+                                options.max_attributes,
+                            ));
+                        }
+                        deduped_defaults.push(d);
+                    }
                 }
 
-                default_attributes = info.default_attributes;
+                default_attributes = deduped_defaults;
             }
             Event::Start(start_event) => {
                 seen_prolog_token = true;
@@ -725,6 +777,7 @@ pub fn parse_xml_bytes(
                     &start_event,
                     options,
                     &default_attributes,
+                    &mut total_text_bytes,
                 )?;
 
                 stack.push(StackFrame {
@@ -787,6 +840,7 @@ pub fn parse_xml_bytes(
                     &empty_event,
                     options,
                     &default_attributes,
+                    &mut total_text_bytes,
                 )?;
                 resolver.pop();
 
@@ -825,12 +879,15 @@ pub fn parse_xml_bytes(
             Event::PI(pi) => {
                 seen_prolog_token = true;
                 let pi_str = pi.as_ref();
+                if pi_str.len() > options.max_comment_size {
+                    return Err(SafeXmlError::CommentLimitExceeded(options.max_comment_size));
+                }
                 if !pi_str.chars().all(is_xml_char) {
                     return Err(SafeXmlError::ParseError(
                         "Invalid XML character in PI".to_string(),
                     ));
                 }
-                let target = pi_str.split_whitespace().next().unwrap_or("");
+                let target = pi_str.split(is_xml_whitespace).next().unwrap_or("");
                 if target.is_empty()
                     || !is_valid_xml_name(target)
                     || target.contains(':')
@@ -924,6 +981,7 @@ fn process_element_and_attributes(
     event: &quick_xml::events::BytesStart,
     options: &ParseOptions,
     default_attributes: &[AttlistDeclInfo],
+    total_text_bytes: &mut usize,
 ) -> Result<(String, Vec<(String, String)>), SafeXmlError> {
     validate_attribute_whitespace(event.as_ref())?;
     let mut total_attr_count = 0;
@@ -1007,6 +1065,10 @@ fn process_element_and_attributes(
             total_attr_count += 1;
             if total_attr_count > options.max_attributes {
                 return Err(SafeXmlError::AttributeLimitExceeded(options.max_attributes));
+            }
+            *total_text_bytes += d.attribute_name.len() + d.default_value.len();
+            if *total_text_bytes > options.max_text_size {
+                return Err(SafeXmlError::TextLimitExceeded(options.max_text_size));
             }
             let binding = if d.attribute_name == "xmlns" {
                 PrefixDeclaration::Default
@@ -1144,6 +1206,10 @@ fn process_element_and_attributes(
                 if total_attr_count > options.max_attributes {
                     return Err(SafeXmlError::AttributeLimitExceeded(options.max_attributes));
                 }
+                *total_text_bytes += attr_name.len() + d.default_value.len();
+                if *total_text_bytes > options.max_text_size {
+                    return Err(SafeXmlError::TextLimitExceeded(options.max_text_size));
+                }
                 attrib.push((attr_name, d.default_value.clone()));
             }
         }
@@ -1198,7 +1264,14 @@ fn resolve_entity_reference(
             ref_name
         ))),
         num if num.starts_with("#x") => {
-            let code = u32::from_str_radix(&num[2..], 16).map_err(|_| {
+            let digits = &num[2..];
+            if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(SafeXmlError::ParseError(format!(
+                    "Invalid character reference: &{};",
+                    ref_name
+                )));
+            }
+            let code = u32::from_str_radix(digits, 16).map_err(|_| {
                 SafeXmlError::ParseError(format!("Invalid character reference: &{};", ref_name))
             })?;
             let c = char::from_u32(code).ok_or_else(|| {
@@ -1213,7 +1286,14 @@ fn resolve_entity_reference(
             Ok(c.to_string())
         }
         num if num.starts_with('#') => {
-            let code = num[1..].parse::<u32>().map_err(|_| {
+            let digits = &num[1..];
+            if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(SafeXmlError::ParseError(format!(
+                    "Invalid character reference: &{};",
+                    ref_name
+                )));
+            }
+            let code = digits.parse::<u32>().map_err(|_| {
                 SafeXmlError::ParseError(format!("Invalid character reference: &{};", ref_name))
             })?;
             let c = char::from_u32(code).ok_or_else(|| {
@@ -1228,6 +1308,12 @@ fn resolve_entity_reference(
             Ok(c.to_string())
         }
         unknown => {
+            if !is_valid_xml_name(unknown) || unknown.contains(':') {
+                return Err(SafeXmlError::ParseError(format!(
+                    "Malformed entity reference: &{};",
+                    unknown
+                )));
+            }
             if options.forbid_entities {
                 Err(SafeXmlError::EntitiesForbidden(Box::new(
                     EntityForbiddenDetails {

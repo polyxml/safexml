@@ -159,6 +159,7 @@ def test_defuse_stdlib_interoperability() -> None:
     orig_parse = std_ET.parse
     orig_iterparse = std_ET.iterparse
     orig_xml = std_ET.XML
+    orig_xmlid = getattr(std_ET, "XMLID", None)
     orig_xmlparser = std_ET.XMLParser
     orig_fromstringlist = getattr(std_ET, "fromstringlist", None)
     orig_et_parse = std_ET.ElementTree.parse
@@ -172,6 +173,14 @@ def test_defuse_stdlib_interoperability() -> None:
         # Verify stdlib fromstringlist now blocks entities
         with pytest.raises(EntitiesForbidden):
             std_ET.fromstringlist(['<!DOCTYPE bomb [<!ENTITY a "123">]><bomb>&a;</bomb>'])
+
+        # Verify stdlib XMLID works on valid XML and blocks entities
+        root_id, id_map = std_ET.XMLID('<root id="r1"><item id="i1"/><item/></root>')
+        assert root_id.tag == "root"
+        assert id_map["r1"] is root_id
+        assert id_map["i1"].tag == "item"
+        with pytest.raises(EntitiesForbidden):
+            std_ET.XMLID('<!DOCTYPE bomb [<!ENTITY a "123">]><bomb id="b">&a;</bomb>')
 
         # Verify stdlib ElementTree().parse() works on valid XML and blocks entities
         tree = std_ET.ElementTree()
@@ -192,6 +201,8 @@ def test_defuse_stdlib_interoperability() -> None:
         std_ET.parse = orig_parse
         std_ET.iterparse = orig_iterparse
         std_ET.XML = orig_xml
+        if orig_xmlid is not None:
+            std_ET.XMLID = orig_xmlid
         std_ET.XMLParser = orig_xmlparser
         if orig_fromstringlist is not None:
             std_ET.fromstringlist = orig_fromstringlist

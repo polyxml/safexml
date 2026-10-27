@@ -21,6 +21,8 @@ pub struct DocTypeInfo {
     pub public_id: Option<String>,
     pub has_internal_subset: bool,
     pub entities: Vec<EntityDeclInfo>,
+    pub notations: Vec<EntityDeclInfo>,
+    pub parameter_entity_refs: Vec<String>,
     pub default_attributes: Vec<AttlistDeclInfo>,
 }
 
@@ -61,7 +63,7 @@ impl<'a> StrScanner<'a> {
 
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek_char() {
-            if c.is_whitespace() {
+            if matches!(c, ' ' | '\t' | '\r' | '\n') {
                 self.next_char();
             } else {
                 break;
@@ -164,7 +166,7 @@ pub fn parse_doctype(s: &str) -> DocTypeInfo {
         if let Some(subset_end) = s.rfind(']') {
             if sub_start < subset_end {
                 let subset = &s[sub_start + 1..subset_end];
-                parse_internal_subset(subset, &mut info.entities, &mut info.default_attributes);
+                parse_internal_subset(subset, &mut info);
             }
         }
     }
@@ -172,11 +174,7 @@ pub fn parse_doctype(s: &str) -> DocTypeInfo {
     info
 }
 
-fn parse_internal_subset(
-    subset: &str,
-    entities: &mut Vec<EntityDeclInfo>,
-    default_attrs: &mut Vec<AttlistDeclInfo>,
-) {
+fn parse_internal_subset(subset: &str, info: &mut DocTypeInfo) {
     let mut scanner = StrScanner::new(subset);
     while !scanner.is_eof() {
         scanner.skip_whitespace();
@@ -189,6 +187,14 @@ fn parse_internal_subset(
             scanner.cursor += 4;
             if let Some(end) = scanner.remaining().find("-->") {
                 scanner.cursor += end + 3;
+            } else {
+                break;
+            }
+        } else if scanner.starts_with("<?") {
+            // Processing instruction in internal subset - skip it
+            scanner.cursor += 2;
+            if let Some(end) = scanner.remaining().find("?>") {
+                scanner.cursor += end + 2;
             } else {
                 break;
             }
@@ -250,7 +256,43 @@ fn parse_internal_subset(
                 scanner.next_char();
             }
 
-            entities.push(entity);
+            info.entities.push(entity);
+        } else if scanner.starts_with("<!NOTATION") {
+            scanner.cursor += 10;
+            scanner.skip_whitespace();
+            let notation_name = scanner
+                .take_while(|c| !c.is_whitespace() && c != '>')
+                .to_string();
+            let mut notation = EntityDeclInfo {
+                name: notation_name,
+                ..Default::default()
+            };
+            while !scanner.is_eof() && !scanner.starts_with(">") {
+                scanner.skip_whitespace();
+                if scanner.is_eof() || scanner.starts_with(">") {
+                    break;
+                }
+                if scanner.starts_with("SYSTEM") {
+                    scanner.cursor += 6;
+                    if let Some(sys_id) = scanner.expect_quoted() {
+                        notation.system_id = Some(sys_id);
+                    }
+                } else if scanner.starts_with("PUBLIC") {
+                    scanner.cursor += 6;
+                    if let Some(pub_id) = scanner.expect_quoted() {
+                        notation.public_id = Some(pub_id);
+                        if let Some(sys_id) = scanner.expect_quoted() {
+                            notation.system_id = Some(sys_id);
+                        }
+                    }
+                } else {
+                    scanner.next_char();
+                }
+            }
+            if scanner.starts_with(">") {
+                scanner.next_char();
+            }
+            info.notations.push(notation);
         } else if scanner.starts_with("<!ATTLIST") {
             scanner.cursor += 9;
             scanner.skip_whitespace();
@@ -307,7 +349,7 @@ fn parse_internal_subset(
                 } else if scanner.starts_with("\"") || scanner.starts_with("'") {
                     if let Some(val) = scanner.expect_quoted() {
                         if !elem_name.is_empty() && !attr_name.is_empty() {
-                            default_attrs.push(AttlistDeclInfo {
+                            info.default_attributes.push(AttlistDeclInfo {
                                 element_name: elem_name.clone(),
                                 attribute_name: attr_name,
                                 default_value: val,
@@ -324,6 +366,18 @@ fn parse_internal_subset(
             if scanner.starts_with(">") {
                 scanner.next_char();
             }
+        } else if scanner.starts_with("%") {
+            scanner.next_char();
+            let pe_name = scanner.take_while(|c| {
+                !matches!(c, ' ' | '\t' | '\r' | '\n' | ';' | '>' | '<' | '"' | '\'')
+            });
+            if !pe_name.is_empty() && scanner.starts_with(";") {
+                let pe_owned = pe_name.to_string();
+                scanner.next_char();
+                info.parameter_entity_refs.push(pe_owned);
+            }
+        } else if scanner.starts_with("\"") || scanner.starts_with("'") {
+            let _ = scanner.expect_quoted();
         } else {
             scanner.next_char();
         }
