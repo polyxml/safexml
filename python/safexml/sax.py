@@ -52,6 +52,22 @@ class SafeXMLParser(XMLReader):
         max_elements: int = 5_000_000,
         max_input_size: int = 256 * 1024 * 1024,
     ) -> None:
+        """Initialize a `SafeXMLParser` SAX reader.
+
+        Args:
+            forbid_dtd: Disallow `<!DOCTYPE ...>` declarations.
+            forbid_entities: Disallow `<!ENTITY ...>` declarations and custom entity references.
+            forbid_external: Disallow external `SYSTEM` and `PUBLIC` references.
+            max_depth: Maximum allowed element nesting depth.
+            max_entity_size: Maximum size in bytes of an entity value.
+            max_text_size: Maximum accumulated text and synthesized attribute size in bytes.
+            max_attributes: Maximum number of attributes per element.
+            max_attribute_size: Maximum size in bytes of a single attribute value.
+            max_name_size: Maximum length in bytes of an XML element or attribute name.
+            max_comment_size: Maximum size in bytes of a comment or processing instruction.
+            max_elements: Maximum total number of elements in the document.
+            max_input_size: Maximum size in bytes of the raw input document.
+        """
         super().__init__()
         self.forbid_dtd = forbid_dtd
         self.forbid_entities = forbid_entities
@@ -69,20 +85,45 @@ class SafeXMLParser(XMLReader):
         self._error_handler = ErrorHandler()
 
     def setContentHandler(self, handler: ContentHandler) -> None:  # type: ignore[override]
+        """Set the SAX `ContentHandler` for document events.
+
+        Args:
+            handler: The `ContentHandler` instance to receive SAX callbacks.
+        """
         self._content_handler = handler
 
     def getContentHandler(self) -> ContentHandler:
+        """Return the active SAX `ContentHandler`.
+
+        Returns:
+            The currently registered `ContentHandler`.
+        """
         return self._content_handler
 
     def setErrorHandler(self, handler: ErrorHandler) -> None:  # type: ignore[override]
+        """Set the SAX `ErrorHandler` for error callbacks.
+
+        Args:
+            handler: The `ErrorHandler` instance.
+        """
         self._error_handler = handler
 
     def getErrorHandler(self) -> ErrorHandler:
+        """Return the active SAX `ErrorHandler`.
+
+        Returns:
+            The currently registered `ErrorHandler`.
+        """
         return self._error_handler
 
     def parse(  # type: ignore[override]
         self, source: str | bytes | os.PathLike[Any] | IO[Any] | InputSource
     ) -> None:
+        """Parse an XML source and emit SAX events to the configured `ContentHandler`.
+
+        Args:
+            source: File path, file-like object, or SAX `InputSource`.
+        """
         actual_source: Any
         if isinstance(source, InputSource):
             byte_stream = source.getByteStream()
@@ -118,7 +159,14 @@ class SafeXMLParser(XMLReader):
 
 
 def make_parser(parser_list: list[str] | None = None) -> SafeXMLParser:
-    """Return a safe XML SAX parser instance."""
+    """Return a safe XML SAX parser instance.
+
+    Args:
+        parser_list: Optional list of parser module names (ignored; retained for stdlib compatibility).
+
+    Returns:
+        A `SafeXMLParser` instance.
+    """
     return SafeXMLParser()
 
 
@@ -139,7 +187,25 @@ def parse(
     max_elements: int = 5_000_000,
     max_input_size: int = 256 * 1024 * 1024,
 ) -> None:
-    """Parse an XML source into a SAX ContentHandler safely."""
+    """Parse an XML source into a SAX `ContentHandler` safely.
+
+    Args:
+        source: File path, file-like object, or SAX `InputSource`.
+        handler: SAX `ContentHandler` to receive document events.
+        errorHandler: Optional SAX `ErrorHandler` instance.
+        forbid_dtd: Disallow `<!DOCTYPE ...>` declarations.
+        forbid_entities: Disallow `<!ENTITY ...>` declarations and custom entity references.
+        forbid_external: Disallow external `SYSTEM` and `PUBLIC` references.
+        max_depth: Maximum allowed element nesting depth.
+        max_entity_size: Maximum size in bytes of an entity value.
+        max_text_size: Maximum accumulated text and synthesized attribute size in bytes.
+        max_attributes: Maximum number of attributes per element.
+        max_attribute_size: Maximum size in bytes of a single attribute value.
+        max_name_size: Maximum length in bytes of an XML element or attribute name.
+        max_comment_size: Maximum size in bytes of a comment or processing instruction.
+        max_elements: Maximum total number of elements in the document.
+        max_input_size: Maximum size in bytes of the raw input document.
+    """
     parser = make_parser()
     parser.forbid_dtd = forbid_dtd
     parser.forbid_entities = forbid_entities
@@ -176,7 +242,25 @@ def parseString(
     max_elements: int = 5_000_000,
     max_input_size: int = 256 * 1024 * 1024,
 ) -> None:
-    """Parse an XML string or bytes into a SAX ContentHandler safely."""
+    """Parse an XML string or bytes into a SAX `ContentHandler` safely.
+
+    Args:
+        string: XML document string or byte sequence.
+        handler: SAX `ContentHandler` to receive document events.
+        errorHandler: Optional SAX `ErrorHandler` instance.
+        forbid_dtd: Disallow `<!DOCTYPE ...>` declarations.
+        forbid_entities: Disallow `<!ENTITY ...>` declarations and custom entity references.
+        forbid_external: Disallow external `SYSTEM` and `PUBLIC` references.
+        max_depth: Maximum allowed element nesting depth.
+        max_entity_size: Maximum size in bytes of an entity value.
+        max_text_size: Maximum accumulated text and synthesized attribute size in bytes.
+        max_attributes: Maximum number of attributes per element.
+        max_attribute_size: Maximum size in bytes of a single attribute value.
+        max_name_size: Maximum length in bytes of an XML element or attribute name.
+        max_comment_size: Maximum size in bytes of a comment or processing instruction.
+        max_elements: Maximum total number of elements in the document.
+        max_input_size: Maximum size in bytes of the raw input document.
+    """
     stream: IO[Any] = io.StringIO(string) if isinstance(string, str) else io.BytesIO(string)
     parse(
         stream,

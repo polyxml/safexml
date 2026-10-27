@@ -88,19 +88,39 @@ exclude_lines = [
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
 [tool.ruff.lint]
 select = [
-    "E",
-    "W",
-    "F",
-    "I",
-    "B",
-    "UP",
-    "SIM",
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "D",    # pydocstyle (Google convention)
+    "ANN",  # flake8-annotations
+    "C4",   # flake8-comprehensions
+    "PT",   # flake8-pytest-style
+    "RET",  # flake8-return
+    "RUF",  # Ruff-specific rules
 ]
 ignore = [
     "E501",
+    "ANN401", # Dynamically typed expressions (typing.Any) are required for stdlib compatibility
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D101", "D102", "D103", "D105", "D107"]
+"benchmarks/*" = ["D101", "D102", "D103", "D105", "D107"]
+"scripts/*" = ["D101", "D102", "D103", "D105", "D107"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["safexml"]

@@ -91,6 +91,9 @@ def defuse_stdlib() -> dict[str, object]:
 
 
 __all__ = [
+    "PI",
+    "XML",
+    "XMLID",
     "Comment",
     "DTDForbidden",
     "DefusedXmlException",
@@ -99,14 +102,11 @@ __all__ = [
     "EntitiesForbidden",
     "ExternalReferenceForbidden",
     "NotSupportedError",
-    "PI",
     "ParseError",
     "ProcessingInstruction",
     "QName",
     "SubElement",
     "TreeBuilder",
-    "XML",
-    "XMLID",
     "XMLParse",
     "XMLParser",
     "canonicalize",

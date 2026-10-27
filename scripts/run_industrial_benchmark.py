@@ -70,7 +70,7 @@ def benchmark_single_document(file_path: Path, iterations: int = 5) -> Benchmark
     rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     for _ in range(5):
         safexml.fromstring(data)
-    current_mem, peak_mem = tracemalloc.get_traced_memory()
+    _current_mem, peak_mem = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     rss_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     # On Linux ru_maxrss is in KiB

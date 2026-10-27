@@ -288,7 +288,7 @@ def test_invalid_xml_names_and_chars_rejection() -> None:
         ET.fromstring("<1root/>")
 
     # NUL character in text
-    with pytest.raises(ParseError, match="Null byte|character"):
+    with pytest.raises(ParseError, match=r"Null byte|character"):
         ET.fromstring("<r>\x00</r>")
 
     # Invalid numeric entity (NUL)
