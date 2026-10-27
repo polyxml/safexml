@@ -210,6 +210,7 @@ pub fn is_valid_xml_qname(s: &str) -> bool {
     if let Some((prefix, local)) = s.split_once(':') {
         !prefix.is_empty()
             && !local.is_empty()
+            && !local.contains(':')
             && is_valid_xml_name(prefix)
             && is_valid_xml_name(local)
     } else {
@@ -677,11 +678,6 @@ pub fn parse_xml_bytes(
 
                 let mut deduped_defaults: Vec<AttlistDeclInfo> = Vec::new();
                 for mut d in info.default_attributes {
-                    if d.element_name.contains('\0') || d.attribute_name.contains('\0') {
-                        return Err(SafeXmlError::ParseError(
-                            "Null byte detected in XML identifier".to_string(),
-                        ));
-                    }
                     if d.element_name.len() > options.max_name_size
                         || d.attribute_name.len() > options.max_name_size
                     {
@@ -709,18 +705,8 @@ pub fn parse_xml_bytes(
                             "Attribute value contains unescaped '<'".to_string(),
                         ));
                     }
-                    if !d.default_value.chars().all(is_xml_char) {
-                        return Err(SafeXmlError::ParseError(
-                            "Invalid XML character in attribute value".to_string(),
-                        ));
-                    }
                     let normalized = normalize_attribute_value(&d.default_value);
                     let unescaped = unescape_attribute_value(&normalized, options)?;
-                    if unescaped.len() > options.max_attribute_size {
-                        return Err(SafeXmlError::AttributeSizeLimitExceeded(
-                            options.max_attribute_size,
-                        ));
-                    }
                     d.default_value = unescaped;
                     if !deduped_defaults.iter().any(|existing| {
                         existing.element_name == d.element_name
@@ -792,13 +778,12 @@ pub fn parse_xml_bytes(
             }
             Event::End(_) => {
                 resolver.pop();
-                if let Some(frame) = stack.pop() {
-                    if stack.is_empty() {
-                        root = Some(frame.elem);
-                        state = DocState::Epilog;
-                    } else {
-                        stack.last_mut().unwrap().elem.children.push(frame.elem);
-                    }
+                let frame = stack.pop().expect("stack is non-empty on Event::End");
+                if let Some(parent) = stack.last_mut() {
+                    parent.elem.children.push(frame.elem);
+                } else {
+                    root = Some(frame.elem);
+                    state = DocState::Epilog;
                 }
             }
             Event::Empty(empty_event) => {
@@ -1040,13 +1025,7 @@ fn process_element_and_attributes(
             let binding = if key_str == "xmlns" {
                 PrefixDeclaration::Default
             } else {
-                let prefix = &key_str[6..];
-                if prefix.is_empty() {
-                    return Err(SafeXmlError::ParseError(
-                        "Empty namespace prefix declaration".to_string(),
-                    ));
-                }
-                PrefixDeclaration::Named(prefix)
+                PrefixDeclaration::Named(&key_str[6..])
             };
 
             resolver
@@ -1073,13 +1052,7 @@ fn process_element_and_attributes(
             let binding = if d.attribute_name == "xmlns" {
                 PrefixDeclaration::Default
             } else {
-                let prefix = &d.attribute_name[6..];
-                if prefix.is_empty() {
-                    return Err(SafeXmlError::ParseError(
-                        "Empty namespace prefix declaration".to_string(),
-                    ));
-                }
-                PrefixDeclaration::Named(prefix)
+                PrefixDeclaration::Named(&d.attribute_name[6..])
             };
             resolver
                 .add(binding, Namespace(&d.default_value))
@@ -1092,16 +1065,7 @@ fn process_element_and_attributes(
     let (res, local) = resolver.resolve_element(event.name());
     let tag = match res {
         ResolveResult::Bound(ns) => format!("{{{}}}{}", ns.0, local.as_ref()),
-        ResolveResult::Unbound => {
-            if event.name().prefix().is_some() {
-                let p = event.name().prefix().unwrap();
-                return Err(SafeXmlError::ParseError(format!(
-                    "unbound prefix: {}",
-                    p.as_ref()
-                )));
-            }
-            local.as_ref().to_string()
-        }
+        ResolveResult::Unbound => local.as_ref().to_string(),
         ResolveResult::Unknown(p) => {
             return Err(SafeXmlError::ParseError(format!("unbound prefix: {}", p)));
         }
@@ -1112,12 +1076,7 @@ fn process_element_and_attributes(
 
     // 3. Process normal attributes
     let mut attrib: Vec<(String, String)> = Vec::new();
-    for attr in event.attributes() {
-        let a = match attr {
-            Ok(a) => a,
-            Err(e) => return Err(SafeXmlError::ParseError(e.to_string())),
-        };
-
+    for a in event.attributes().flatten() {
         let key_str = a.key.as_ref();
         if key_str == "xmlns" || key_str.starts_with("xmlns:") {
             continue;
@@ -1126,16 +1085,7 @@ fn process_element_and_attributes(
         let (res, local) = resolver.resolve_attribute(a.key);
         let attr_name = match res {
             ResolveResult::Bound(ns) => format!("{{{}}}{}", ns.0, local.as_ref()),
-            ResolveResult::Unbound => {
-                if a.key.prefix().is_some() {
-                    let p = a.key.prefix().unwrap();
-                    return Err(SafeXmlError::ParseError(format!(
-                        "unbound prefix: {}",
-                        p.as_ref()
-                    )));
-                }
-                local.as_ref().to_string()
-            }
+            ResolveResult::Unbound => local.as_ref().to_string(),
             ResolveResult::Unknown(p) => {
                 return Err(SafeXmlError::ParseError(format!("unbound prefix: {}", p)));
             }
@@ -1185,15 +1135,7 @@ fn process_element_and_attributes(
             let (res, local) = resolver.resolve_attribute(qname);
             let attr_name = match res {
                 ResolveResult::Bound(ns) => format!("{{{}}}{}", ns.0, local.as_ref()),
-                ResolveResult::Unbound => {
-                    if let Some(p) = qname.prefix() {
-                        return Err(SafeXmlError::ParseError(format!(
-                            "unbound prefix: {}",
-                            p.as_ref()
-                        )));
-                    }
-                    local.as_ref().to_string()
-                }
+                ResolveResult::Unbound => local.as_ref().to_string(),
                 ResolveResult::Unknown(p) => {
                     return Err(SafeXmlError::ParseError(format!("unbound prefix: {}", p)));
                 }
@@ -1346,11 +1288,7 @@ fn append_text_chunk(
         return Err(SafeXmlError::TextLimitExceeded(options.max_text_size));
     }
 
-    if stack.is_empty() {
-        return Ok(());
-    }
-
-    let top = stack.last_mut().unwrap();
+    let top = stack.last_mut().expect("stack is non-empty InsideDocument");
     if top.elem.children.is_empty() {
         match &mut top.elem.text {
             Some(existing) => existing.push_str(chunk),
@@ -1393,10 +1331,7 @@ mod tests {
         <bomb>&a;</bomb>"#;
         let opt = ParseOptions::default();
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        let SafeXmlError::EntitiesForbidden(d) = err else {
-            panic!()
-        };
-        assert_eq!(d.name, "a");
+        assert!(matches!(err, SafeXmlError::EntitiesForbidden(ref d) if d.name == "a"));
     }
 
     #[test]
@@ -1407,20 +1342,19 @@ mod tests {
         <root>&ee;</root>"#;
         let opt = ParseOptions::default();
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        let SafeXmlError::ExternalReferenceForbidden { sysid, .. } = err else {
-            panic!()
-        };
-        assert_eq!(
-            sysid.as_deref(),
-            Some("http://www.w3schools.com/xml/note.xml")
-        );
+        assert!(matches!(
+            err,
+            SafeXmlError::ExternalReferenceForbidden { ref sysid, .. }
+                if sysid.as_deref() == Some("http://www.w3schools.com/xml/note.xml")
+        ));
 
         let xml2 = br#"<!DOCTYPE root SYSTEM "http://example.com/test.dtd"><root/>"#;
         let err2 = parse_xml_bytes(xml2, &opt).unwrap_err();
-        let SafeXmlError::ExternalReferenceForbidden { sysid: sys2, .. } = err2 else {
-            panic!()
-        };
-        assert_eq!(sys2.as_deref(), Some("http://example.com/test.dtd"));
+        assert!(matches!(
+            err2,
+            SafeXmlError::ExternalReferenceForbidden { ref sysid, .. }
+                if sysid.as_deref() == Some("http://example.com/test.dtd")
+        ));
     }
 
     #[test]
@@ -1431,10 +1365,7 @@ mod tests {
             ..Default::default()
         };
         let err = parse_xml_bytes(xml, &opt).unwrap_err();
-        let SafeXmlError::DTDForbidden { name, .. } = err else {
-            panic!()
-        };
-        assert_eq!(name, "root");
+        assert!(matches!(err, SafeXmlError::DTDForbidden { ref name, .. } if name == "root"));
     }
 
     #[test]
@@ -1656,10 +1587,7 @@ mod tests {
         // Undefined entity with forbid_entities = true
         let opt_forbid = ParseOptions::default();
         let err5 = parse_xml_bytes(b"<root>&custom;</root>", &opt_forbid).unwrap_err();
-        let SafeXmlError::EntitiesForbidden(d) = err5 else {
-            panic!()
-        };
-        assert_eq!(d.name, "custom");
+        assert!(matches!(err5, SafeXmlError::EntitiesForbidden(ref d) if d.name == "custom"));
     }
 
     #[test]
@@ -1686,10 +1614,7 @@ mod tests {
         // Attribute with unknown entity when forbid_entities = true
         let xml_attr_ent = br#"<root attr="&unknown;"/>"#;
         let err = parse_xml_bytes(xml_attr_ent, &opt).unwrap_err();
-        let SafeXmlError::EntitiesForbidden(d) = err else {
-            panic!()
-        };
-        assert_eq!(d.name, "unknown");
+        assert!(matches!(err, SafeXmlError::EntitiesForbidden(ref d) if d.name == "unknown"));
 
         // Attribute with unknown entity when forbid_entities = false
         let opt_no_forbid = ParseOptions {
@@ -1827,10 +1752,7 @@ mod tests {
 
         // Unknown entity in attribute with forbid_entities = true vs false
         let err6 = parse_xml_bytes(b"<root attr='&custom;'/>", &opt).unwrap_err();
-        let SafeXmlError::EntitiesForbidden(d) = err6 else {
-            panic!()
-        };
-        assert_eq!(d.name, "custom");
+        assert!(matches!(err6, SafeXmlError::EntitiesForbidden(ref d) if d.name == "custom"));
 
         // Namespace push error on start tag
         let err7 = parse_xml_bytes(b"<root xmlns:xmlns='http://foo'></root>", &opt).unwrap_err();
@@ -1849,5 +1771,373 @@ mod tests {
         assert!(format!("{}", err10)
             .to_lowercase()
             .contains("invalid character reference"));
+    }
+
+    #[test]
+    fn test_xml_char_and_helper_functions() {
+        for c in [
+            ':',
+            'A',
+            '_',
+            'z',
+            '\u{C0}',
+            '\u{D8}',
+            '\u{F8}',
+            '\u{370}',
+            '\u{37F}',
+            '\u{200C}',
+            '\u{2070}',
+            '\u{2C00}',
+            '\u{3001}',
+            '\u{F900}',
+            '\u{FDF0}',
+            '\u{10000}',
+        ] {
+            assert!(is_xml_name_start_char(c));
+            assert!(is_xml_name_char(c));
+        }
+        for c in ['-', '.', '0', '\u{B7}', '\u{0300}', '\u{203F}'] {
+            assert!(!is_xml_name_start_char(c));
+            assert!(is_xml_name_char(c));
+        }
+        assert!(!is_valid_xml_name(""));
+        assert!(!is_valid_xml_name("-bad"));
+        assert!(is_valid_xml_name("good-name.1"));
+        assert!(is_valid_xml_qname("p:local"));
+        assert!(!is_valid_xml_qname(":local"));
+        assert!(!is_valid_xml_qname("p:"));
+        assert!(!is_valid_xml_qname("p:a:b"));
+
+        assert!(is_xml_char('\t'));
+        assert!(is_xml_char('\n'));
+        assert!(is_xml_char('\r'));
+        assert!(is_xml_char(' '));
+        assert!(is_xml_char('\u{E000}'));
+        assert!(is_xml_char('\u{10000}'));
+        assert!(!is_xml_char('\u{0008}'));
+        assert!(!is_xml_char('\u{FFFF}'));
+
+        assert_eq!(normalize_xml_newlines("abc"), "abc");
+        assert_eq!(normalize_xml_newlines("a\r\nb\rc\nd"), "a\nb\nc\nd");
+        assert_eq!(normalize_attribute_value("a\r\nb\rc\td\ne"), "a b c d e");
+
+        assert!(detect_declared_encoding(b"<root/>").is_none());
+        assert!(
+            detect_declared_encoding(b"<?xml version='1.0' encoding='ISO-8859-1'?><r/>").is_some()
+        );
+        assert!(detect_declared_encoding(b"<?xml version='1.0' encoding=UTF-8?><r/>").is_none());
+        assert!(
+            detect_declared_encoding(b"<?xml fooencoding='UTF-8' encoding='UTF-8'?>").is_some()
+        );
+
+        assert!(check_doctype_casing(
+            b"<!-- comment --><?pi target?><!OTHER something><!DOCTYPE r><r/>"
+        ));
+        assert!(!check_doctype_casing(b"<!doctype r><r/>"));
+        assert!(check_doctype_casing(b"<!-- unclosed comment <!doctype r>"));
+        assert!(check_doctype_casing(b"<?pi unclosed <!doctype r>"));
+
+        assert!(!is_valid_enc_name(""));
+        assert!(!is_valid_enc_name("123"));
+        assert!(!is_valid_enc_name("UTF-8!"));
+        assert!(is_valid_enc_name("UTF-8_1.0"));
+
+        assert!(validate_xml_decl("xml\u{0008} version='1.0'").is_err());
+        assert!(validate_xml_decl("notxml version='1.0'").is_err());
+        assert!(validate_xml_decl("xml").is_err());
+        assert!(validate_xml_decl("xml version").is_err());
+        assert!(validate_xml_decl("xml version=1.0").is_err());
+        assert!(validate_xml_decl("xml version='1.0").is_err());
+        assert!(validate_xml_decl("xml version='1.0' version='1.0'").is_err());
+        assert!(validate_xml_decl("xml version='2.0'").is_err());
+        assert!(validate_xml_decl("xml encoding='UTF-8'").is_err());
+        assert!(validate_xml_decl("xml version='1.0' encoding='!bad'").is_err());
+        assert!(validate_xml_decl("xml standalone='yes'").is_err());
+        assert!(validate_xml_decl("xml version='1.0' standalone='maybe'").is_err());
+        assert!(validate_xml_decl("xml version='1.0' unknown='1'").is_err());
+        assert!(validate_xml_decl("xml version='1.0'encoding='UTF-8'").is_err());
+        assert!(validate_xml_decl("xml   ").is_err());
+        assert!(validate_xml_decl("xml version='1.0' encoding='UTF-8' standalone='yes'").is_ok());
+
+        assert!(validate_attribute_whitespace("root a = '1' b = \"2\" /").is_ok());
+        assert!(validate_attribute_whitespace("root a='1'b='2'").is_err());
+        assert!(validate_attribute_whitespace("root a").is_ok());
+        assert!(validate_attribute_whitespace("root a=").is_ok());
+        assert!(validate_attribute_whitespace("root a=unquoted").is_ok());
+        assert!(validate_attribute_whitespace("root a='unclosed").is_ok());
+    }
+
+    #[test]
+    fn test_w3c_conformance_and_attlist_branches() {
+        let opt = ParseOptions::default();
+
+        // Non-UTF-8 encoding detected from XML declaration
+        let latin1_xml = b"<?xml version='1.0' encoding='ISO-8859-1'?><root>caf\xe9</root>";
+        let root_latin1 = parse_xml_bytes(latin1_xml, &opt).unwrap();
+        assert_eq!(root_latin1.text.as_deref(), Some("café"));
+
+        // Encoding mismatch (UTF-16 BOM with UTF-8 declaration)
+        let mut utf16_mismatch = vec![0xFE, 0xFF];
+        for b in b"<?xml version='1.0' encoding='UTF-8'?><r/>" {
+            utf16_mismatch.push(0x00);
+            utf16_mismatch.push(*b);
+        }
+        assert!(parse_xml_bytes(&utf16_mismatch, &opt).is_err());
+
+        // Misplaced XML declaration
+        assert!(parse_xml_bytes(b"<!-- c --><?xml version='1.0'?><r/>", &opt).is_err());
+
+        // DOCTYPE after root or duplicate DOCTYPE
+        assert!(parse_xml_bytes(b"<r/><!DOCTYPE r>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<!DOCTYPE r><!DOCTYPE r><r/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<!doctype r><r/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<!DOCTYPE r [\x08]><r/>", &opt).is_err());
+
+        // DOCTYPE name limit
+        let opt_short_name = ParseOptions {
+            max_name_size: 2,
+            ..Default::default()
+        };
+        assert!(matches!(
+            parse_xml_bytes(b"<!DOCTYPE longname><r/>", &opt_short_name).unwrap_err(),
+            SafeXmlError::NameLimitExceeded(2)
+        ));
+
+        // External notation forbidden
+        assert!(matches!(
+            parse_xml_bytes(b"<!DOCTYPE r [<!NOTATION n SYSTEM 'sys'>]><r/>", &opt).unwrap_err(),
+            SafeXmlError::ExternalReferenceForbidden { .. }
+        ));
+
+        // Internal notation allowed when no external ID, and forbid_external=false
+        assert!(parse_xml_bytes(b"<!DOCTYPE r [<!NOTATION n >]><r/>", &opt).is_ok());
+        let opt_allow_ext = ParseOptions {
+            forbid_external: false,
+            ..Default::default()
+        };
+        assert!(parse_xml_bytes(b"<!DOCTYPE r SYSTEM 'ext.dtd'><r/>", &opt_allow_ext).is_ok());
+
+        // ATTLIST invalid xmlns:xmlns binding, element mismatch, and existing attribute override
+        assert!(parse_xml_bytes(
+            b"<!DOCTYPE r [<!ATTLIST r xmlns:xmlns CDATA 'http://foo'>]><r/>",
+            &opt
+        )
+        .is_err());
+        let root_override = parse_xml_bytes(
+            b"<!DOCTYPE r [<!ATTLIST r a CDATA 'def'><!ATTLIST other b CDATA '2'>]><r a='explicit'/>",
+            &opt,
+        )
+        .unwrap();
+        assert_eq!(
+            root_override.attrib,
+            vec![("a".to_string(), "explicit".to_string())]
+        );
+
+        // Duplicate expanded attribute name via two prefixes bound to same URI
+        assert!(parse_xml_bytes(
+            b"<r xmlns:p1='http://same.ns' xmlns:p2='http://same.ns' p1:a='1' p2:a='2'/>",
+            &opt
+        )
+        .is_err());
+
+        // Parameter entity reference in DTD forbidden when forbid_entities=true
+        assert!(matches!(
+            parse_xml_bytes(b"<!DOCTYPE r [%pe;]><r/>", &opt).unwrap_err(),
+            SafeXmlError::EntitiesForbidden(ref d) if d.name == "pe"
+        ));
+
+        // Entity size limit when forbid_entities=false
+        let opt_ent_size = ParseOptions {
+            forbid_entities: false,
+            max_entity_size: 3,
+            ..Default::default()
+        };
+        assert!(
+            parse_xml_bytes(b"<!DOCTYPE r [<!ENTITY e 'toolong'>]><r/>", &opt_ent_size).is_err()
+        );
+        assert!(parse_xml_bytes(
+            b"<!DOCTYPE r [<!ENTITY e 'ok'><!ENTITY empty >]><r/>",
+            &opt_ent_size
+        )
+        .is_ok());
+
+        // ATTLIST validation errors
+        assert!(parse_xml_bytes(b"<!DOCTYPE r [<!ATTLIST r\0 a CDATA '1'>]><r/>", &opt).is_err());
+        assert!(parse_xml_bytes(
+            b"<!DOCTYPE r [<!ATTLIST longname a CDATA '1'>]><r/>",
+            &opt_short_name
+        )
+        .is_err());
+        assert!(parse_xml_bytes(b"<!DOCTYPE r [<!ATTLIST 1bad a CDATA '1'>]><r/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<!DOCTYPE r [<!ATTLIST r 1bad CDATA '1'>]><r/>", &opt).is_err());
+
+        let opt_attr_size = ParseOptions {
+            max_attribute_size: 3,
+            ..Default::default()
+        };
+        assert!(matches!(
+            parse_xml_bytes(
+                b"<!DOCTYPE r [<!ATTLIST r a CDATA 'toolong'>]><r/>",
+                &opt_attr_size
+            )
+            .unwrap_err(),
+            SafeXmlError::AttributeSizeLimitExceeded(3)
+        ));
+        assert!(parse_xml_bytes(b"<!DOCTYPE r [<!ATTLIST r a CDATA '<bad'>]><r/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<!DOCTYPE r [<!ATTLIST r a CDATA '\x08'>]><r/>", &opt).is_err());
+
+        // Unescaped attribute value exceeding max_attribute_size ( wait:&#65; is 5 chars -> 1 char, what if max_attribute_size is checked after unescaping? Wait: entity expansion can only shrink or keep size for built-in/char refs, so raw len check already catches it! )
+
+        // ATTLIST deduplication and max_attributes limit
+        let opt_max_attr1 = ParseOptions {
+            max_attributes: 1,
+            ..Default::default()
+        };
+        assert!(parse_xml_bytes(
+            b"<!DOCTYPE r [<!ATTLIST r a CDATA '1'><!ATTLIST r a CDATA '2'>]><r/>",
+            &opt_max_attr1
+        )
+        .is_ok());
+        assert!(matches!(
+            parse_xml_bytes(
+                b"<!DOCTYPE r [<!ATTLIST r a CDATA '1'><!ATTLIST r b CDATA '2'>]><r/>",
+                &opt_max_attr1
+            )
+            .unwrap_err(),
+            SafeXmlError::AttributeLimitExceeded(1)
+        ));
+
+        // ATTLIST default xmlns and prefixed attributes
+        let dtd_ns = br#"<!DOCTYPE p:r [
+            <!ATTLIST p:r
+                xmlns CDATA "http://default.ns"
+                xmlns:p CDATA "http://prefix.ns"
+                p:attr CDATA "pval"
+                plain CDATA "dval"
+            >
+        ]><p:r/>"#;
+        let root_ns = parse_xml_bytes(dtd_ns, &opt).unwrap();
+        assert_eq!(root_ns.tag, "{http://prefix.ns}r");
+        assert!(root_ns
+            .attrib
+            .contains(&("{http://prefix.ns}attr".to_string(), "pval".to_string())));
+        assert!(root_ns
+            .attrib
+            .contains(&("plain".to_string(), "dval".to_string())));
+
+        // ATTLIST default xmlns attribute count & text size limits
+        let dtd_ns_2 = br#"<!DOCTYPE r [<!ATTLIST r xmlns CDATA "http://default.ns">]><r a="1"/>"#;
+        assert!(matches!(
+            parse_xml_bytes(dtd_ns_2, &opt_max_attr1).unwrap_err(),
+            SafeXmlError::AttributeLimitExceeded(1)
+        ));
+        let opt_text_small = ParseOptions {
+            max_text_size: 5,
+            ..Default::default()
+        };
+        assert!(matches!(
+            parse_xml_bytes(dtd_ns_2, &opt_text_small).unwrap_err(),
+            SafeXmlError::TextLimitExceeded(5)
+        ));
+
+        // ATTLIST normal attribute limits (unbound prefix, max_name_size, max_attributes, max_text_size)
+        assert!(parse_xml_bytes(b"<!DOCTYPE r [<!ATTLIST r unk:a CDATA '1'>]><r/>", &opt).is_err());
+        let opt_name_10 = ParseOptions {
+            max_name_size: 10,
+            ..Default::default()
+        };
+        assert!(matches!(
+            parse_xml_bytes(
+                b"<!DOCTYPE r [<!ATTLIST r xmlns:p CDATA 'http://very.long.ns' p:a CDATA '1'>]><r/>",
+                &opt_name_10
+            )
+            .unwrap_err(),
+            SafeXmlError::NameLimitExceeded(10)
+        ));
+        assert!(matches!(
+            parse_xml_bytes(
+                b"<!DOCTYPE r [<!ATTLIST r b CDATA '2'>]><r a='1'/>",
+                &opt_max_attr1
+            )
+            .unwrap_err(),
+            SafeXmlError::AttributeLimitExceeded(1)
+        ));
+        assert!(matches!(
+            parse_xml_bytes(
+                b"<!DOCTYPE r [<!ATTLIST r b CDATA '123456'>]><r/>",
+                &opt_text_small
+            )
+            .unwrap_err(),
+            SafeXmlError::TextLimitExceeded(5)
+        ));
+
+        // Multiple root elements (Start and Empty in Epilog)
+        assert!(parse_xml_bytes(b"<r/><r2></r2>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r/><r2/>", &opt).is_err());
+
+        // Illegal element names (Start and Empty) and attribute name
+        assert!(parse_xml_bytes(b"<1bad></1bad>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<1bad/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r 1bad='1'/>", &opt).is_err());
+
+        // Comment validation (-- andInvalid XML char)
+        assert!(parse_xml_bytes(b"<r><!-- bad -- comment --></r>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r><!-- bad \x08 comment --></r>", &opt).is_err());
+
+        // PI validation (limit, invalid char, invalid target)
+        let opt_comm_small = ParseOptions {
+            max_comment_size: 3,
+            ..Default::default()
+        };
+        assert!(matches!(
+            parse_xml_bytes(b"<?verylongpi?><r/>", &opt_comm_small).unwrap_err(),
+            SafeXmlError::CommentLimitExceeded(3)
+        ));
+        assert!(parse_xml_bytes(b"<?pi \x08?><r/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<?xml:bad?><r/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<?XML version='1.0'?><r/>", &opt).is_err());
+
+        // Text and CDATA validation
+        assert!(parse_xml_bytes(b"<r>abc]]>def</r>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r>bad\x08text</r>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<![CDATA[outside]]><r/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r><![CDATA[bad\x08cdata]]></r>", &opt).is_err());
+        assert!(parse_xml_bytes(b"&amp;<r/>", &opt).is_err());
+
+        // Unclosed element at EOF
+        assert!(parse_xml_bytes(b"<r><unclosed>", &opt).is_err());
+
+        // xmlns attribute limits & validation
+        assert!(matches!(
+            parse_xml_bytes(b"<r xmlns='http://too.long'/>", &opt_attr_size).unwrap_err(),
+            SafeXmlError::AttributeSizeLimitExceeded(3)
+        ));
+        assert!(parse_xml_bytes(b"<r xmlns='http://<'/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r xmlns='http://\x08'/>", &opt).is_err());
+
+        // Resolved tag / attribute name exceeding max_name_size
+        assert!(matches!(
+            parse_xml_bytes(b"<r xmlns='http://very.long.ns'/>", &opt_name_10).unwrap_err(),
+            SafeXmlError::NameLimitExceeded(10)
+        ));
+        assert!(matches!(
+            parse_xml_bytes(b"<r xmlns:p='http://very.long.ns' p:a='1'/>", &opt_name_10)
+                .unwrap_err(),
+            SafeXmlError::NameLimitExceeded(10)
+        ));
+
+        // Unbound attribute prefix, duplicate attribute, '<' and invalid char in attribute
+        assert!(parse_xml_bytes(b"<r unk:a='1'/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r a='1' a='2'/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r a='<bad'/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r a='bad\x08'/>", &opt).is_err());
+
+        // Entity and character reference edge cases
+        assert!(parse_xml_bytes(b"<r a='&unterminated'/>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r>&#X41;</r>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r>&#x08;</r>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r>&#999999999999;</r>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r>&#8;</r>", &opt).is_err());
+        assert!(parse_xml_bytes(b"<r>&bad:entity;</r>", &opt).is_err());
     }
 }

@@ -482,6 +482,13 @@ def test_plus_sign_char_ref_and_malformed_attr_entity_rejection() -> None:
     with pytest.raises(ParseError, match="Invalid processing instruction target"):
         ET.fromstring("<r><?target\u00a0data?></r>")
 
+    # Multi-colon QName rejected
+    with pytest.raises(ParseError, match="Illegal XML element name"):
+        ET.fromstring('<p:a:b xmlns:p="http://example.com"/>')
+
+    with pytest.raises(ParseError, match="Illegal XML attribute name"):
+        ET.fromstring('<r xmlns:p="http://example.com" p:a:b="1"/>')
+
 
 def test_xmlparser_feed_input_size_limit() -> None:
     """XMLParser.feed() must enforce max_input_size immediately before buffering unbounded data."""
