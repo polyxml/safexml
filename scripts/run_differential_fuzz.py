@@ -39,8 +39,8 @@ def assert_dom_equal(e1: std_ET.Element, e2: std_ET.Element) -> None:
     """Recursively assert that two Element instances represent identical DOM trees."""
     assert e1.tag == e2.tag, f"Tag mismatch: {e1.tag} != {e2.tag}"
     assert e1.attrib == e2.attrib, f"Attribute mismatch: {e1.attrib} != {e2.attrib}"
-    assert (e1.text or "") == (e2.text or ""), f"Text mismatch: {repr(e1.text)} != {repr(e2.text)}"
-    assert (e1.tail or "") == (e2.tail or ""), f"Tail mismatch: {repr(e1.tail)} != {repr(e2.tail)}"
+    assert (e1.text or "") == (e2.text or ""), f"Text mismatch: {e1.text!r} != {e2.text!r}"
+    assert (e1.tail or "") == (e2.tail or ""), f"Tail mismatch: {e1.tail!r} != {e2.tail!r}"
     assert len(e1) == len(e2), f"Child count mismatch: {len(e1)} != {len(e2)}"
     for c1, c2 in zip(e1, e2, strict=True):
         assert_dom_equal(c1, c2)
@@ -98,15 +98,15 @@ class StructuredXMLGenerator:
         if mutation == "truncate" and len(valid) > 6:
             cut = self.rng.randint(2, len(valid) - 3)
             return valid[:cut]
-        elif mutation == "mismatch_end":
+        if mutation == "mismatch_end":
             return valid.replace(b"</", b"<//")
-        elif mutation == "duplicate_root":
+        if mutation == "duplicate_root":
             return valid + b"<extra/>"
-        elif mutation == "null_byte":
+        if mutation == "null_byte":
             return valid.replace(b">", b">\x00", 1)
-        elif mutation == "illegal_control":
+        if mutation == "illegal_control":
             return valid.replace(b">", b">\x0b", 1)
-        elif mutation == "unclosed_attr":
+        if mutation == "unclosed_attr":
             return valid.replace(b'="', b"=")
 
         return valid

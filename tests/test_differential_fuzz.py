@@ -35,10 +35,10 @@ def assert_dom_equal(e1: std_ET.Element, e2: std_ET.Element) -> None:
     assert e1.tag == e2.tag, f"Tag mismatch: {e1.tag} != {e2.tag}"
     assert e1.attrib == e2.attrib, f"Attribute mismatch at <{e1.tag}>: {e1.attrib} != {e2.attrib}"
     assert (e1.text or "") == (e2.text or ""), (
-        f"Text mismatch at <{e1.tag}>: {repr(e1.text)} != {repr(e2.text)}"
+        f"Text mismatch at <{e1.tag}>: {e1.text!r} != {e2.text!r}"
     )
     assert (e1.tail or "") == (e2.tail or ""), (
-        f"Tail mismatch at <{e1.tag}>: {repr(e1.tail)} != {repr(e2.tail)}"
+        f"Tail mismatch at <{e1.tag}>: {e1.tail!r} != {e2.tail!r}"
     )
     assert len(e1) == len(e2), f"Child count mismatch at <{e1.tag}>: {len(e1)} != {len(e2)}"
     for c1, c2 in zip(e1, e2, strict=True):
@@ -109,15 +109,15 @@ def mutated_xml_strategy(draw: st.DrawFn) -> bytes:
     if mutation_type == "truncate" and len(valid_xml) > 5:
         cutoff = draw(st.integers(min_value=1, max_value=len(valid_xml) - 2))
         return valid_xml[:cutoff]
-    elif mutation_type == "corrupt_end_tag":
+    if mutation_type == "corrupt_end_tag":
         return valid_xml.replace(b"</", b"<//")
-    elif mutation_type == "junk_after_root":
+    if mutation_type == "junk_after_root":
         return valid_xml + b"<extra_junk/>"
-    elif mutation_type == "unclosed_quote":
+    if mutation_type == "unclosed_quote":
         return valid_xml.replace(b'="', b"=")
-    elif mutation_type == "illegal_control_char":
+    if mutation_type == "illegal_control_char":
         return valid_xml.replace(b">", b">\x0b", 1)
-    elif mutation_type == "null_byte":
+    if mutation_type == "null_byte":
         return valid_xml.replace(b">", b">\x00", 1)
 
     return valid_xml + b"<!-- trailing -->"

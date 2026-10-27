@@ -288,7 +288,7 @@ def test_invalid_xml_names_and_chars_rejection() -> None:
         ET.fromstring("<1root/>")
 
     # NUL character in text
-    with pytest.raises(ParseError, match="Null byte|character"):
+    with pytest.raises(ParseError, match=r"Null byte|character"):
         ET.fromstring("<r>\x00</r>")
 
     # Invalid numeric entity (NUL)
@@ -393,3 +393,106 @@ def test_deep_nesting_wrappers_no_recursion_error() -> None:
     # Minidom
     doc = safexml.minidom.parseString(xml)
     assert doc.documentElement.tagName == "r"
+
+
+def test_attlist_default_attribute_security_limits() -> None:
+    """ATTLIST default attributes must enforce entity, size, count, name, and character restrictions."""
+    from safexml.common import ParseError
+
+    # Entity reference inside ATTLIST default value blocked when forbid_entities=True
+    with pytest.raises(EntitiesForbidden):
+        ET.fromstring('<!DOCTYPE r [<!ATTLIST r a CDATA "&evil;">]><r/>')
+
+    # Oversized default attribute value rejected by max_attribute_size
+    big_val = "A" * 200
+    with pytest.raises(DefusedXmlException, match="maximum size limit"):
+        ET.fromstring(
+            f'<!DOCTYPE r [<!ATTLIST r a CDATA "{big_val}">]><r/>',
+            max_attribute_size=50,
+        )
+
+    # Default attributes counted toward max_attributes
+    with pytest.raises(DefusedXmlException, match="attribute count limit"):
+        ET.fromstring(
+            '<!DOCTYPE r [<!ATTLIST r a CDATA "1" b CDATA "2" c CDATA "3">]><r/>',
+            max_attributes=2,
+        )
+
+    # Oversized attribute name in ATTLIST rejected by max_name_size
+    long_name = "attr_" + "x" * 100
+    with pytest.raises(DefusedXmlException, match="maximum length limit"):
+        ET.fromstring(
+            f'<!DOCTYPE r [<!ATTLIST r {long_name} CDATA "1">]><r/>',
+            max_name_size=20,
+        )
+
+    # Unescaped '<' in ATTLIST default value rejected
+    with pytest.raises(ParseError, match="Attribute value contains unescaped"):
+        ET.fromstring('<!DOCTYPE r [<!ATTLIST r a CDATA "<script>">]><r/>')
+
+    # ATTLIST default attribute amplification across repeated elements blocked by max_text_size
+    val_chunk = "X" * 100
+    amplified_xml = (
+        f'<!DOCTYPE r [<!ATTLIST item payload CDATA "{val_chunk}">]><r>{"<item/>" * 20}</r>'
+    )
+    with pytest.raises(DefusedXmlException, match="text size limit"):
+        ET.fromstring(amplified_xml, max_text_size=500)
+
+    # First ATTLIST declaration wins per XML 1.0 §3.3
+    dedup_xml = '<!DOCTYPE r [<!ATTLIST r a CDATA "first"><!ATTLIST r a CDATA "second">]><r/>'
+    assert ET.fromstring(dedup_xml).attrib["a"] == "first"
+
+
+def test_notation_external_and_parameter_entity_ref_in_dtd() -> None:
+    """<!NOTATION> external IDs and bare %pe; references in DTD must be blocked."""
+    with pytest.raises(ExternalReferenceForbidden):
+        ET.fromstring('<!DOCTYPE r [<!NOTATION ext SYSTEM "http://127.0.0.1/not">]><r/>')
+
+    with pytest.raises(ExternalReferenceForbidden):
+        ET.fromstring(
+            '<!DOCTYPE r [<!NOTATION ext PUBLIC "-//PUB//ID" "http://127.0.0.1/not">]><r/>'
+        )
+
+    with pytest.raises(EntitiesForbidden):
+        ET.fromstring("<!DOCTYPE r [ %pe; ]><r/>")
+
+
+def test_plus_sign_char_ref_and_malformed_attr_entity_rejection() -> None:
+    """Numeric character references with '+' and malformed '&...;' in attributes must raise ParseError."""
+    from safexml.common import ParseError
+
+    with pytest.raises(ParseError, match="Invalid character reference"):
+        ET.fromstring("<r>&#+65;</r>")
+
+    with pytest.raises(ParseError, match="Invalid character reference"):
+        ET.fromstring("<r>&#x+41;</r>")
+
+    # Malformed '&unterminated &amp;' in attribute must raise ParseError, not EntitiesForbidden
+    with pytest.raises(ParseError, match="Malformed entity reference"):
+        ET.fromstring('<r a="&unterminated &amp;"/>')
+
+    with pytest.raises(ParseError, match="Malformed entity reference"):
+        ET.fromstring('<r a="&;"/>')
+
+    # Oversized PI rejected by max_comment_size
+    with pytest.raises(DefusedXmlException, match="comment exceeded maximum size limit"):
+        ET.fromstring(f"<r><?target {'A' * 200}?></r>", max_comment_size=50)
+
+    # Non-XML whitespace (NBSP) after PI target rejected
+    with pytest.raises(ParseError, match="Invalid processing instruction target"):
+        ET.fromstring("<r><?target\u00a0data?></r>")
+
+    # Multi-colon QName rejected
+    with pytest.raises(ParseError, match="Illegal XML element name"):
+        ET.fromstring('<p:a:b xmlns:p="http://example.com"/>')
+
+    with pytest.raises(ParseError, match="Illegal XML attribute name"):
+        ET.fromstring('<r xmlns:p="http://example.com" p:a:b="1"/>')
+
+
+def test_xmlparser_feed_input_size_limit() -> None:
+    """XMLParser.feed() must enforce max_input_size immediately before buffering unbounded data."""
+    parser = ET.XMLParser(max_input_size=20)
+    parser.feed("<root>")
+    with pytest.raises(DefusedXmlException, match="exceeds maximum allowed limit"):
+        parser.feed("A" * 50)

@@ -10,6 +10,8 @@ from __future__ import annotations
 import concurrent.futures
 import time
 import xml.etree.ElementTree as std_ET
+from collections.abc import Callable
+from typing import Any
 
 import defusedxml.ElementTree as defused_ET
 
@@ -31,8 +33,10 @@ def generate_xml(num_items: int) -> str:
     return "\n".join(lines)
 
 
-def bench_single_threaded(parser_fn, xml_data: str, iterations: int) -> tuple[float, float]:
-    """Returns (mean_latency_us, ops_per_sec)."""
+def bench_single_threaded(
+    parser_fn: Callable[[str], Any], xml_data: str, iterations: int
+) -> tuple[float, float]:
+    """Return `(mean_latency_us, ops_per_sec)`."""
     # Warmup
     for _ in range(min(5, iterations)):
         parser_fn(xml_data)
@@ -47,8 +51,10 @@ def bench_single_threaded(parser_fn, xml_data: str, iterations: int) -> tuple[fl
     return mean_us, ops_sec
 
 
-def bench_multi_threaded(parser_fn, xml_data: str, total_tasks: int, workers: int) -> float:
-    """Returns ops_per_sec under concurrent worker threads."""
+def bench_multi_threaded(
+    parser_fn: Callable[[str], Any], xml_data: str, total_tasks: int, workers: int
+) -> float:
+    """Return `ops_per_sec` under concurrent worker threads."""
     # Warmup
     for _ in range(4):
         parser_fn(xml_data)

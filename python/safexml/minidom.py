@@ -48,10 +48,37 @@ def parse(
     forbid_entities: bool = True,
     forbid_external: bool = True,
     max_depth: int = 1000,
+    max_entity_size: int = 10 * 1024 * 1024,
+    max_text_size: int = 100 * 1024 * 1024,
+    max_attributes: int = 1000,
+    max_attribute_size: int = 10 * 1024 * 1024,
+    max_name_size: int = 1024,
+    max_comment_size: int = 10 * 1024 * 1024,
     max_elements: int = 5_000_000,
     max_input_size: int = 256 * 1024 * 1024,
 ) -> _stdlib_minidom.Document:
-    """Parse a file or stream into a minidom Document with SafeXML security protections."""
+    """Parse a file or stream into a minidom `Document` with SafeXML security protections.
+
+    Args:
+        file: File path or file-like stream containing XML data.
+        parser: Optional parser instance (retained for stdlib compatibility).
+        bufsize: Optional buffer size parameter (retained for stdlib compatibility).
+        forbid_dtd: Disallow `<!DOCTYPE ...>` declarations.
+        forbid_entities: Disallow `<!ENTITY ...>` declarations and custom entity references.
+        forbid_external: Disallow external `SYSTEM` and `PUBLIC` references.
+        max_depth: Maximum allowed element nesting depth.
+        max_entity_size: Maximum size in bytes of an entity value.
+        max_text_size: Maximum accumulated text and synthesized attribute size in bytes.
+        max_attributes: Maximum number of attributes per element.
+        max_attribute_size: Maximum size in bytes of a single attribute value.
+        max_name_size: Maximum length in bytes of an XML element or attribute name.
+        max_comment_size: Maximum size in bytes of a comment or processing instruction.
+        max_elements: Maximum total number of elements in the document.
+        max_input_size: Maximum size in bytes of the raw input document.
+
+    Returns:
+        A `xml.dom.minidom.Document` instance.
+    """
     tree = _safexml_etree.parse(
         file,
         parser=parser,
@@ -59,6 +86,12 @@ def parse(
         forbid_entities=forbid_entities,
         forbid_external=forbid_external,
         max_depth=max_depth,
+        max_entity_size=max_entity_size,
+        max_text_size=max_text_size,
+        max_attributes=max_attributes,
+        max_attribute_size=max_attribute_size,
+        max_name_size=max_name_size,
+        max_comment_size=max_comment_size,
         max_elements=max_elements,
         max_input_size=max_input_size,
     )
@@ -72,10 +105,36 @@ def parseString(
     forbid_entities: bool = True,
     forbid_external: bool = True,
     max_depth: int = 1000,
+    max_entity_size: int = 10 * 1024 * 1024,
+    max_text_size: int = 100 * 1024 * 1024,
+    max_attributes: int = 1000,
+    max_attribute_size: int = 10 * 1024 * 1024,
+    max_name_size: int = 1024,
+    max_comment_size: int = 10 * 1024 * 1024,
     max_elements: int = 5_000_000,
     max_input_size: int = 256 * 1024 * 1024,
 ) -> _stdlib_minidom.Document:
-    """Parse an XML string or bytes into a minidom Document with SafeXML security protections."""
+    """Parse an XML string or bytes into a minidom `Document` with SafeXML security protections.
+
+    Args:
+        string: XML document string or byte sequence.
+        parser: Optional parser instance (retained for stdlib compatibility).
+        forbid_dtd: Disallow `<!DOCTYPE ...>` declarations.
+        forbid_entities: Disallow `<!ENTITY ...>` declarations and custom entity references.
+        forbid_external: Disallow external `SYSTEM` and `PUBLIC` references.
+        max_depth: Maximum allowed element nesting depth.
+        max_entity_size: Maximum size in bytes of an entity value.
+        max_text_size: Maximum accumulated text and synthesized attribute size in bytes.
+        max_attributes: Maximum number of attributes per element.
+        max_attribute_size: Maximum size in bytes of a single attribute value.
+        max_name_size: Maximum length in bytes of an XML element or attribute name.
+        max_comment_size: Maximum size in bytes of a comment or processing instruction.
+        max_elements: Maximum total number of elements in the document.
+        max_input_size: Maximum size in bytes of the raw input document.
+
+    Returns:
+        A `xml.dom.minidom.Document` instance.
+    """
     root = _safexml_etree.fromstring(
         string,
         parser=parser,
@@ -83,6 +142,12 @@ def parseString(
         forbid_entities=forbid_entities,
         forbid_external=forbid_external,
         max_depth=max_depth,
+        max_entity_size=max_entity_size,
+        max_text_size=max_text_size,
+        max_attributes=max_attributes,
+        max_attribute_size=max_attribute_size,
+        max_name_size=max_name_size,
+        max_comment_size=max_comment_size,
         max_elements=max_elements,
         max_input_size=max_input_size,
     )

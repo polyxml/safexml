@@ -73,10 +73,59 @@ def test_fromstring_parser_keyword_argument() -> None:
 
 
 def test_pep561_py_typed_marker() -> None:
-    """Package must include PEP 561 `py.typed` marker for static type checkers (mypy/pyright)."""
+    """Package must include PEP 561 `py.typed` marker and `_safexml.pyi` stub for static type checkers."""
+    import mypy.api
+
     safexml_pkg = pathlib.Path(safexml.__file__).parent
     py_typed = safexml_pkg / "py.typed"
+    stub_file = safexml_pkg / "_safexml.pyi"
     assert py_typed.is_file(), f"Missing PEP 561 marker at {py_typed}"
+    assert stub_file.is_file(), f"Missing type stub at {stub_file}"
+
+    stdout, stderr, exit_code = mypy.api.run(["--strict", str(safexml_pkg)])
+    assert exit_code == 0, f"mypy --strict failed:\n{stdout}\n{stderr}"
+
+
+def test_multi_attribute_and_enumerated_attlist_defaults() -> None:
+    """DOCTYPE ATTLIST must support multiple attribute definitions, enumerated types, and default xmlns."""
+    xml = (
+        "<!DOCTYPE root [\n"
+        "  <!ATTLIST root\n"
+        '    xmlns CDATA "urn:test"\n'
+        '    mode (fast | safe) "safe"\n'
+        '    version CDATA #FIXED "1.0"\n'
+        "    optional CDATA #IMPLIED\n"
+        '    extra CDATA "ok">\n'
+        "]>\n"
+        "<root/>"
+    )
+    root = ET.fromstring(xml)
+    assert root.tag == "{urn:test}root"
+    assert root.attrib["mode"] == "safe"
+    assert root.attrib["version"] == "1.0"
+    assert root.attrib["extra"] == "ok"
+    assert "optional" not in root.attrib
+
+
+def test_encoding_declaration_whitespace_around_equals() -> None:
+    """XML declaration with whitespace around '=' in encoding attribute must be detected properly."""
+    raw = b'<?xml version = "1.0" encoding = "ISO-8859-1"?><r>caf\xe9</r>'
+    root = ET.fromstring(raw)
+    assert root.text == "café"
+
+
+def test_doctype_casing_ignores_comments_and_pis() -> None:
+    """Lowercase '<!doctype' inside comments or PIs must not trigger false-positive casing errors."""
+    xml = "<!-- <!doctype html> --><?pi <!doctype html>?><!DOCTYPE r><r><!-- <!doctype x> --></r>"
+    root = ET.fromstring(xml)
+    assert root.tag == "r"
+
+
+def test_doctype_brackets_in_system_literal() -> None:
+    """Brackets inside quoted SYSTEM/PUBLIC literals must not be mistaken for an internal subset."""
+    xml = '<!DOCTYPE r SYSTEM "http://example.com/dtd[1].dtd"><r/>'
+    root = ET.fromstring(xml, forbid_external=False)
+    assert root.tag == "r"
 
 
 def test_fromstringlist_support() -> None:
@@ -110,6 +159,7 @@ def test_defuse_stdlib_interoperability() -> None:
     orig_parse = std_ET.parse
     orig_iterparse = std_ET.iterparse
     orig_xml = std_ET.XML
+    orig_xmlid = getattr(std_ET, "XMLID", None)
     orig_xmlparser = std_ET.XMLParser
     orig_fromstringlist = getattr(std_ET, "fromstringlist", None)
     orig_et_parse = std_ET.ElementTree.parse
@@ -123,6 +173,14 @@ def test_defuse_stdlib_interoperability() -> None:
         # Verify stdlib fromstringlist now blocks entities
         with pytest.raises(EntitiesForbidden):
             std_ET.fromstringlist(['<!DOCTYPE bomb [<!ENTITY a "123">]><bomb>&a;</bomb>'])
+
+        # Verify stdlib XMLID works on valid XML and blocks entities
+        root_id, id_map = std_ET.XMLID('<root id="r1"><item id="i1"/><item/></root>')
+        assert root_id.tag == "root"
+        assert id_map["r1"] is root_id
+        assert id_map["i1"].tag == "item"
+        with pytest.raises(EntitiesForbidden):
+            std_ET.XMLID('<!DOCTYPE bomb [<!ENTITY a "123">]><bomb id="b">&a;</bomb>')
 
         # Verify stdlib ElementTree().parse() works on valid XML and blocks entities
         tree = std_ET.ElementTree()
@@ -143,6 +201,8 @@ def test_defuse_stdlib_interoperability() -> None:
         std_ET.parse = orig_parse
         std_ET.iterparse = orig_iterparse
         std_ET.XML = orig_xml
+        if orig_xmlid is not None:
+            std_ET.XMLID = orig_xmlid
         std_ET.XMLParser = orig_xmlparser
         if orig_fromstringlist is not None:
             std_ET.fromstringlist = orig_fromstringlist

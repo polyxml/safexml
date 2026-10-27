@@ -21,6 +21,8 @@ pub struct DocTypeInfo {
     pub public_id: Option<String>,
     pub has_internal_subset: bool,
     pub entities: Vec<EntityDeclInfo>,
+    pub notations: Vec<EntityDeclInfo>,
+    pub parameter_entity_refs: Vec<String>,
     pub default_attributes: Vec<AttlistDeclInfo>,
 }
 
@@ -61,7 +63,7 @@ impl<'a> StrScanner<'a> {
 
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek_char() {
-            if c.is_whitespace() {
+            if matches!(c, ' ' | '\t' | '\r' | '\n') {
                 self.next_char();
             } else {
                 break;
@@ -128,6 +130,7 @@ pub fn parse_doctype(s: &str) -> DocTypeInfo {
         .take_while(|c| !c.is_whitespace() && c != '[' && c != '>')
         .to_string();
 
+    let mut subset_start: Option<usize> = None;
     while !scanner.is_eof() {
         scanner.skip_whitespace();
         if scanner.is_eof() {
@@ -136,6 +139,7 @@ pub fn parse_doctype(s: &str) -> DocTypeInfo {
 
         if scanner.starts_with("[") {
             info.has_internal_subset = true;
+            subset_start = Some(scanner.cursor);
             break;
         }
 
@@ -158,12 +162,11 @@ pub fn parse_doctype(s: &str) -> DocTypeInfo {
     }
 
     // Parse internal subset if present
-    if let Some(subset_start) = s.find('[') {
-        info.has_internal_subset = true;
+    if let Some(sub_start) = subset_start {
         if let Some(subset_end) = s.rfind(']') {
-            if subset_start < subset_end {
-                let subset = &s[subset_start + 1..subset_end];
-                parse_internal_subset(subset, &mut info.entities, &mut info.default_attributes);
+            if sub_start < subset_end {
+                let subset = &s[sub_start + 1..subset_end];
+                parse_internal_subset(subset, &mut info);
             }
         }
     }
@@ -171,11 +174,7 @@ pub fn parse_doctype(s: &str) -> DocTypeInfo {
     info
 }
 
-fn parse_internal_subset(
-    subset: &str,
-    entities: &mut Vec<EntityDeclInfo>,
-    default_attrs: &mut Vec<AttlistDeclInfo>,
-) {
+fn parse_internal_subset(subset: &str, info: &mut DocTypeInfo) {
     let mut scanner = StrScanner::new(subset);
     while !scanner.is_eof() {
         scanner.skip_whitespace();
@@ -188,6 +187,14 @@ fn parse_internal_subset(
             scanner.cursor += 4;
             if let Some(end) = scanner.remaining().find("-->") {
                 scanner.cursor += end + 3;
+            } else {
+                break;
+            }
+        } else if scanner.starts_with("<?") {
+            // Processing instruction in internal subset - skip it
+            scanner.cursor += 2;
+            if let Some(end) = scanner.remaining().find("?>") {
+                scanner.cursor += end + 2;
             } else {
                 break;
             }
@@ -249,48 +256,125 @@ fn parse_internal_subset(
                 scanner.next_char();
             }
 
-            entities.push(entity);
+            info.entities.push(entity);
+        } else if scanner.starts_with("<!NOTATION") {
+            scanner.cursor += 10;
+            scanner.skip_whitespace();
+            let notation_name = scanner
+                .take_while(|c| !c.is_whitespace() && c != '>')
+                .to_string();
+            let mut notation = EntityDeclInfo {
+                name: notation_name,
+                ..Default::default()
+            };
+            while !scanner.is_eof() && !scanner.starts_with(">") {
+                scanner.skip_whitespace();
+                if scanner.is_eof() || scanner.starts_with(">") {
+                    break;
+                }
+                if scanner.starts_with("SYSTEM") {
+                    scanner.cursor += 6;
+                    if let Some(sys_id) = scanner.expect_quoted() {
+                        notation.system_id = Some(sys_id);
+                    }
+                } else if scanner.starts_with("PUBLIC") {
+                    scanner.cursor += 6;
+                    if let Some(pub_id) = scanner.expect_quoted() {
+                        notation.public_id = Some(pub_id);
+                        if let Some(sys_id) = scanner.expect_quoted() {
+                            notation.system_id = Some(sys_id);
+                        }
+                    }
+                } else {
+                    scanner.next_char();
+                }
+            }
+            if scanner.starts_with(">") {
+                scanner.next_char();
+            }
+            info.notations.push(notation);
         } else if scanner.starts_with("<!ATTLIST") {
             scanner.cursor += 9;
             scanner.skip_whitespace();
             let elem_name = scanner
                 .take_while(|c| !c.is_whitespace() && c != '>')
                 .to_string();
-            scanner.skip_whitespace();
-            let attr_name = scanner
-                .take_while(|c| !c.is_whitespace() && c != '>')
-                .to_string();
-            scanner.skip_whitespace();
-            // attribute type (e.g. CDATA, ID, etc.)
-            let _attr_type = scanner
-                .take_while(|c| !c.is_whitespace() && c != '>')
-                .to_string();
-            scanner.skip_whitespace();
 
-            if scanner.starts_with("#FIXED") {
-                scanner.cursor += 6;
+            while !scanner.is_eof() {
                 scanner.skip_whitespace();
-            }
-
-            if scanner.starts_with("#REQUIRED") || scanner.starts_with("#IMPLIED") {
-                // no default
-            } else if let Some(val) = scanner.expect_quoted() {
-                if !elem_name.is_empty() && !attr_name.is_empty() {
-                    default_attrs.push(AttlistDeclInfo {
-                        element_name: elem_name,
-                        attribute_name: attr_name,
-                        default_value: val,
-                    });
+                if scanner.is_eof() || scanner.starts_with(">") {
+                    break;
                 }
-            }
+                let attr_name = scanner
+                    .take_while(|c| !c.is_whitespace() && c != '>')
+                    .to_string();
+                scanner.skip_whitespace();
+                if scanner.is_eof() || scanner.starts_with(">") {
+                    break;
+                }
+                // attribute type (e.g. CDATA, ID, NOTATION (...), or enumeration (...))
+                if scanner.starts_with("NOTATION") {
+                    scanner.cursor += 8;
+                    scanner.skip_whitespace();
+                }
+                if scanner.starts_with("(") {
+                    scanner.next_char();
+                    while let Some(c) = scanner.next_char() {
+                        if c == ')' || c == '>' {
+                            break;
+                        }
+                    }
+                } else {
+                    let _attr_type = scanner
+                        .take_while(|c| !c.is_whitespace() && c != '>')
+                        .to_string();
+                }
+                scanner.skip_whitespace();
+                if scanner.is_eof() || scanner.starts_with(">") {
+                    break;
+                }
 
-            // advance to '>'
-            while !scanner.is_eof() && !scanner.starts_with(">") {
-                scanner.next_char();
+                if scanner.starts_with("#FIXED") {
+                    scanner.cursor += 6;
+                    scanner.skip_whitespace();
+                }
+
+                if scanner.starts_with("#REQUIRED") {
+                    scanner.cursor += 9;
+                } else if scanner.starts_with("#IMPLIED") {
+                    scanner.cursor += 8;
+                } else if scanner.starts_with("\"") || scanner.starts_with("'") {
+                    if let Some(val) = scanner.expect_quoted() {
+                        if !elem_name.is_empty() {
+                            info.default_attributes.push(AttlistDeclInfo {
+                                element_name: elem_name.clone(),
+                                attribute_name: attr_name,
+                                default_value: val,
+                            });
+                        }
+                    }
+                } else {
+                    while !scanner.is_eof() && !scanner.starts_with(">") {
+                        scanner.next_char();
+                    }
+                    break;
+                }
             }
             if scanner.starts_with(">") {
                 scanner.next_char();
             }
+        } else if scanner.starts_with("%") {
+            scanner.next_char();
+            let pe_name = scanner.take_while(|c| {
+                !matches!(c, ' ' | '\t' | '\r' | '\n' | ';' | '>' | '<' | '"' | '\'')
+            });
+            if !pe_name.is_empty() && scanner.starts_with(";") {
+                let pe_owned = pe_name.to_string();
+                scanner.next_char();
+                info.parameter_entity_refs.push(pe_owned);
+            }
+        } else if scanner.starts_with("\"") || scanner.starts_with("'") {
+            let _ = scanner.expect_quoted();
         } else {
             scanner.next_char();
         }
@@ -304,6 +388,8 @@ mod tests {
     #[test]
     fn test_extract_quoted() {
         assert_eq!(extract_quoted("", 0), None);
+        assert_eq!(extract_quoted("abc", 10), None);
+        assert_eq!(extract_quoted("é", 1), None);
         assert_eq!(extract_quoted("   ", 0), None);
         assert_eq!(extract_quoted("noquote", 0), None);
         assert_eq!(extract_quoted("\"unterminated", 0), None);
@@ -343,10 +429,12 @@ mod tests {
             Some("http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd")
         );
 
-        // PUBLIC without system
+        // PUBLIC without system and PUBLIC unquoted
         let d2b = parse_doctype(r#"root PUBLIC "pub_only""#);
         assert_eq!(d2b.public_id.as_deref(), Some("pub_only"));
         assert_eq!(d2b.system_id, None);
+        let d2c = parse_doctype("root PUBLIC unquoted");
+        assert_eq!(d2c.public_id, None);
 
         // With internal subset and entity declarations
         let d3 = parse_doctype(
@@ -355,6 +443,8 @@ mod tests {
             <!ENTITY b '&a;&a;&a;&a;&a;&a;&a;&a;'>
             <!ENTITY % pe "param">
             <!ENTITY pub_ent PUBLIC "pub_id" "sys_id">
+            <!ENTITY pub_no_sys PUBLIC "pub_id">
+            <!ENTITY pub_unquoted PUBLIC unquoted>
             <!ENTITY pic SYSTEM "pic.gif" NDATA gif>
             <!ENTITY empty_junk >
             <!ENTITY other ignore_unrecognized_token >
@@ -362,7 +452,7 @@ mod tests {
         );
         assert_eq!(d3.name, "xmlbomb");
         assert!(d3.has_internal_subset);
-        assert_eq!(d3.entities.len(), 7);
+        assert_eq!(d3.entities.len(), 9);
         assert_eq!(d3.entities[0].name, "a");
         assert_eq!(d3.entities[0].value.as_deref(), Some("1234567890"));
         assert_eq!(d3.entities[1].name, "b");
@@ -374,9 +464,9 @@ mod tests {
         assert_eq!(d3.entities[3].name, "pub_ent");
         assert_eq!(d3.entities[3].public_id.as_deref(), Some("pub_id"));
         assert_eq!(d3.entities[3].system_id.as_deref(), Some("sys_id"));
-        assert_eq!(d3.entities[4].name, "pic");
-        assert_eq!(d3.entities[4].system_id.as_deref(), Some("pic.gif"));
-        assert_eq!(d3.entities[4].notation.as_deref(), Some("gif"));
+        assert_eq!(d3.entities[6].name, "pic");
+        assert_eq!(d3.entities[6].system_id.as_deref(), Some("pic.gif"));
+        assert_eq!(d3.entities[6].notation.as_deref(), Some("gif"));
 
         // DTD with unmatched '[' bracket
         let d_unmatched = parse_doctype("root [ unterminated");
@@ -391,19 +481,79 @@ mod tests {
         let d_spaces = parse_doctype("root   ");
         assert_eq!(d_spaces.name, "root");
 
-        // Unicode DTD and entities in comments must not panic
+        // Unicode DTD and entities in comments/PIs must not panic
         let d_unicode = parse_doctype("r é");
         assert_eq!(d_unicode.name, "r");
 
-        let d_comment = parse_doctype("r [<!-- <!ENTITY fake é> -->]");
+        let d_comment = parse_doctype("r [<!-- <!ENTITY fake é> --><?pi target?>]");
         assert_eq!(d_comment.name, "r");
         assert_eq!(d_comment.entities.len(), 0);
 
-        // ATTLIST default attribute
-        let d_att = parse_doctype(r#"r [<!ATTLIST r role CDATA "user">]"#);
-        assert_eq!(d_att.default_attributes.len(), 1);
+        let d_unterm_comment = parse_doctype("r [<!-- unterminated ]");
+        assert_eq!(d_unterm_comment.entities.len(), 0);
+
+        let d_unterm_pi = parse_doctype("r [<?unterminated ]");
+        assert_eq!(d_unterm_pi.entities.len(), 0);
+
+        // NOTATION declarations, parameter entity refs, and top-level quotes/tokens in subset
+        let d_not = parse_doctype(
+            r#"r [
+            <!NOTATION n1 SYSTEM "sys.not">
+            <!NOTATION n2 PUBLIC "pub.not" "sys2.not">
+            <!NOTATION n3 PUBLIC "pub_only.not">
+            <!NOTATION n4 PUBLIC unquoted>
+            <!NOTATION n5 OTHER>
+            %pe_ref;
+            %not_a_ref
+            "top_double_quote"
+            'top_single_quote'
+            OTHER_TOKEN
+        ]"#,
+        );
+        assert_eq!(d_not.notations.len(), 5);
+        assert_eq!(d_not.notations[0].system_id.as_deref(), Some("sys.not"));
+        assert_eq!(d_not.notations[1].public_id.as_deref(), Some("pub.not"));
+        assert_eq!(d_not.notations[1].system_id.as_deref(), Some("sys2.not"));
+        assert_eq!(
+            d_not.notations[2].public_id.as_deref(),
+            Some("pub_only.not")
+        );
+        assert_eq!(d_not.parameter_entity_refs, vec!["pe_ref".to_string()]);
+
+        // ATTLIST variations
+        let d_att = parse_doctype(
+            r#"r [
+            <!ATTLIST r
+                role CDATA "user"
+                fixed_attr CDATA #FIXED "fixed_val"
+                req_attr ID #REQUIRED
+                imp_attr NMTOKEN #IMPLIED
+                enum_attr (a|b) 'a'
+                not_attr NOTATION (n1|n2) "n1"
+            >
+            <!ATTLIST r attr_only>
+            <!ATTLIST r type_only CDATA>
+            <!ATTLIST r unclosed_quote CDATA "unterminated>
+            <!ATTLIST r unknown_default CDATA #UNKNOWN extra>
+            <!ATTLIST r unclosed_enum (a|b ]"#
+                .replace("unterminated>", "unterminated")
+                .as_str(),
+        );
+        assert_eq!(d_att.default_attributes.len(), 4);
         assert_eq!(d_att.default_attributes[0].element_name, "r");
         assert_eq!(d_att.default_attributes[0].attribute_name, "role");
         assert_eq!(d_att.default_attributes[0].default_value, "user");
+        assert_eq!(d_att.default_attributes[1].attribute_name, "fixed_attr");
+        assert_eq!(d_att.default_attributes[1].default_value, "fixed_val");
+        assert_eq!(d_att.default_attributes[2].attribute_name, "enum_attr");
+        assert_eq!(d_att.default_attributes[2].default_value, "a");
+        assert_eq!(d_att.default_attributes[3].attribute_name, "not_attr");
+        assert_eq!(d_att.default_attributes[3].default_value, "n1");
+
+        let d_att_unknown = parse_doctype("r [<!ATTLIST r unknown_default CDATA #UNKNOWN extra>]");
+        assert!(d_att_unknown.default_attributes.is_empty());
+
+        let d_att_unclosed_enum = parse_doctype("r [<!ATTLIST r unclosed_enum (a|b]");
+        assert!(d_att_unclosed_enum.default_attributes.is_empty());
     }
 }

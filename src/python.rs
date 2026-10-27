@@ -77,7 +77,8 @@ fn raw_to_py_element<'py>(
         child_idx: 0,
     }];
 
-    while let Some(frame) = stack.last_mut() {
+    loop {
+        let frame = stack.last_mut().expect("stack is never empty");
         if frame.child_idx < frame.node.children.len() {
             let child_node = &frame.node.children[frame.child_idx];
             frame.child_idx += 1;
@@ -89,14 +90,12 @@ fn raw_to_py_element<'py>(
                 child_idx: 0,
             });
         } else {
-            if stack.len() == 1 {
-                return Ok(stack.pop().unwrap().py_elem);
+            let popped = stack.pop().expect("stack is never empty");
+            if stack.is_empty() {
+                return Ok(popped.py_elem);
             }
-            stack.pop();
         }
     }
-
-    create_single_py_element(py, element_cls, root_node)
 }
 
 #[pyfunction]
@@ -337,6 +336,15 @@ mod tests {
             assert!(err2
                 .to_string()
                 .contains("source.read() must return str or bytes"));
+
+            // Malformed XML triggering map_safe_error_to_py via parse_xml
+            let bad_xml = pyo3::types::PyString::new(py, "<unclosed").into_any();
+            let err3 = parse_xml(
+                py, &bad_xml, false, true, true, 1000, 10485760, 104857600, 1000, 10485760, 1024,
+                10485760, 268435456, 5000000,
+            )
+            .unwrap_err();
+            assert!(err3.to_string().contains("ParseError"));
         });
     }
 

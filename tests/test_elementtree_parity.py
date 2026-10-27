@@ -135,7 +135,7 @@ def test_parse_invalid_source_type() -> None:
 
 
 def test_iterparse_event_filters(xml_simple: str) -> None:
-    """iterparse with only 'start' or only 'end' events."""
+    """Iterparse with only 'start' or only 'end' events."""
     starts = list(safe_ET.iterparse(io.StringIO(xml_simple), events=("start",)))
     assert all(ev == "start" for ev, _ in starts)
     assert len(starts) > 0
@@ -227,7 +227,7 @@ def test_xmlparser_lifecycle_and_defusedxmlparser_alias() -> None:
 
 
 def test_iterparse_root_property() -> None:
-    """iterparse provides .root property pointing to the document root element."""
+    """Iterparse provides .root property pointing to the document root element."""
     xml = "<catalog><book id='1'>Text</book></catalog>"
     it = safe_ET.iterparse(io.StringIO(xml))
     assert hasattr(it, "root")
