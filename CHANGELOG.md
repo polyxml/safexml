@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/polyxml/safexml/compare/v1.1.1...v1.2.0) (2026-10-27)
+
+
+### Features
+
+* add Python typing stubs, strict mypy CI, and parser security/conformance fixes ([#24](https://github.com/polyxml/safexml/issues/24)) ([5506fa1](https://github.com/polyxml/safexml/commit/5506fa1cda217472ef73b4dca51bea8cd9cc95d1))
+
 ## [1.1.1](https://github.com/polyxml/safexml/compare/v1.1.0...v1.1.1) (2026-10-12)
 
 
