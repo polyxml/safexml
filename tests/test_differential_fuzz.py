@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 from pathlib import Path
 from xml.etree import ElementTree as std_ET
 
@@ -102,6 +103,8 @@ def mutated_xml_strategy(draw: st.DrawFn) -> bytes:
                 "unclosed_quote",
                 "illegal_control_char",
                 "null_byte",
+                "space_missing_attr",
+                "unclosed_cdata",
             ]
         )
     )
@@ -119,6 +122,10 @@ def mutated_xml_strategy(draw: st.DrawFn) -> bytes:
         return valid_xml.replace(b">", b">\x0b", 1)
     if mutation_type == "null_byte":
         return valid_xml.replace(b">", b">\x00", 1)
+    if mutation_type == "space_missing_attr":
+        return valid_xml.replace(b'" ', b'"', 1)
+    if mutation_type == "unclosed_cdata":
+        return valid_xml.replace(b"]]>", b"]]")
 
     return valid_xml + b"<!-- trailing -->"
 
@@ -151,6 +158,47 @@ def test_differential_fuzz_mutated_rejection_parity(xml_data: bytes) -> None:
 
     if std_failed:
         assert safe_failed, f"SafeXML was more permissive than stdlib on: {xml_data!r}"
+
+
+@settings(max_examples=40, deadline=None)
+@given(
+    xml_data=structured_xml_strategy(),
+    chunk_size=st.integers(min_value=1, max_value=32),
+)
+def test_differential_fuzz_chunked_stream_parity(xml_data: bytes, chunk_size: int) -> None:
+    """Stream Invariance: chunked file-like reading must match in-memory parsing exactly."""
+    elem_mem = safexml.fromstring(xml_data)
+
+    class ChunkedStream(io.BytesIO):
+        def read(self, n: int = -1) -> bytes:
+            return super().read(min(n if n > 0 else chunk_size, chunk_size))
+
+    stream = ChunkedStream(xml_data)
+    elem_stream = safexml.parse(stream).getroot()
+    assert_dom_equal(elem_mem, elem_stream)
+
+
+@settings(max_examples=40, deadline=None)
+@given(
+    root_tag=xml_ident,
+    attr_name=xml_ident,
+    attr_val=st.text(alphabet=xml_chars, min_size=1, max_size=20),
+)
+def test_differential_fuzz_attlist_default_merging_parity(
+    root_tag: str, attr_name: str, attr_val: str
+) -> None:
+    """ATTLIST Oracle: Verify ATTLIST defaults are applied correctly and match stdlib/expat behavior."""
+    xml_doc = (
+        f"<!DOCTYPE {root_tag} [\n"
+        f'  <!ATTLIST {root_tag} {attr_name} CDATA "{attr_val}">\n'
+        f"]>\n"
+        f"<{root_tag}/>"
+    ).encode()
+
+    # SafeXML with allow DTD & entities forbidden
+    elem_safe = safexml.fromstring(xml_doc, forbid_dtd=False, forbid_entities=False)
+    elem_std = std_ET.fromstring(xml_doc)
+    assert_dom_equal(elem_std, elem_safe)
 
 
 @settings(max_examples=50, deadline=None)

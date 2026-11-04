@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       duration_seconds:
-        description: 'Duration to fuzz in seconds'
+        description: 'Duration to fuzz per target in seconds'
         required: false
         default: '600'
         type: string
@@ -21,8 +21,12 @@ permissions:
 
 jobs:
   fuzz:
-    name: Nightly ASan / UBSan libFuzzer Campaign
+    name: Nightly ASan / UBSan libFuzzer Campaign (${{ matrix.target }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [fuzz_parser, fuzz_structured_xml, fuzz_metamorphic, fuzz_doctype_scanner]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -35,15 +39,16 @@ jobs:
 
       - name: Seed initial corpus
         run: |
-          mkdir -p fuzz/corpus/fuzz_parser
-          cp fuzz/seeds/*.xml fuzz/corpus/fuzz_parser/ || true
+          mkdir -p fuzz/corpus/${{ matrix.target }}
+          cp fuzz/seeds/*.xml fuzz/corpus/${{ matrix.target }}/ || true
 
-      - name: Run libFuzzer with AddressSanitizer and XML dictionary
+      - name: Run libFuzzer with AddressSanitizer and value profiling
         run: |
-          DURATION="${{ github.event.inputs.duration_seconds || '1800' }}"
-          echo "Starting fuzzing campaign for ${DURATION}s..."
-          cargo +nightly fuzz run fuzz_parser -- \
+          DURATION="${{ github.event.inputs.duration_seconds || '600' }}"
+          echo "Starting fuzzing campaign for target ${{ matrix.target }} (${DURATION}s)..."
+          cargo +nightly fuzz run ${{ matrix.target }} -- \
             -dict=fuzz/xml.dict \
+            -use_value_profile=1 \
             -max_total_time="${DURATION}" \
             -print_final_stats=1
 
@@ -51,7 +56,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: fuzz-crash-artifacts
+          name: fuzz-crash-artifacts-${{ matrix.target }}
           path: |
             fuzz/artifacts/
             crash-*
