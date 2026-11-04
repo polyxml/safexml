@@ -247,14 +247,18 @@ For benchmark data and attack reproduction suites, see the **[Industrial Validat
 
 ---
 
-## ⚡ Continuous Structure-Aware Fuzzing & Sanitizers
+## ⚡ State-of-the-Art Fuzzing & Sanitizer Pipeline
 
-SafeXML incorporates continuous fuzz testing to guarantee memory safety and zero panics across arbitrary inputs and parameter configurations:
+SafeXML incorporates a research-grade, multi-tiered fuzz testing architecture to guarantee memory safety, differential parser immunity (preventing SAML/XXE auth bypasses), and strict resource limit enforcement:
 
-- **Structure-Aware libFuzzer**: Randomized `ParseOptions` fuzz target (`fuzz/fuzz_targets/fuzz_parser.rs`) exploring permutations of depth limits, attribute bounds, and DTD permissions.
-- **XML Syntax Dictionary**: Seeded with `fuzz/xml.dict` containing XML grammar tokens, DTD specifiers, namespace declarations, and known attack strings.
-- **Nightly Sanitizer Pipeline**: Automated GitHub Actions workflow (`.github/workflows/fuzz.yml`) running libFuzzer under **AddressSanitizer (ASan)** and **UndefinedBehaviorSanitizer (UBSan)** with crash artifact archiving.
-- **Google OSS-Fuzz**: Integration manifests prepared in `oss-fuzz/` for 24/7 continuous distributed cluster fuzzing.
+- **Structure-Aware Grammar Fuzzing**: Typed AST generation (`fuzz/fuzz_targets/fuzz_structured_xml.rs`) based on the *Zest / Nautilus* paradigm, synthesizing complex DTDs, scoped namespace hierarchies, `<!ATTLIST>` defaults, and entity unescaping with controlled fault injection.
+- **Strict Post-Condition Invariant Oracles**: Automated tree validation (`fuzz/fuzz_targets/fuzz_parser.rs`) asserting that every parsed DOM strictly adheres to `max_depth`, `max_elements`, `max_attributes`, and `max_name_size` with zero limit escapes.
+- **Metamorphic Invariance Oracles**: Differential property checks (`fuzz/fuzz_targets/fuzz_metamorphic.rs`) verifying canonical round-trip idempotence (`parse(serialize(x)) == x`), UTF-8/UTF-16 encoding equivalence, and monotonic security tightening.
+- **Compositional Scanner Micro-Harness**: Dedicated slice scanner fuzzer (`fuzz/fuzz_targets/fuzz_doctype_scanner.rs`) testing internal DTD subsets, quoted string extractions, and XML declaration parsers against malformed byte/char boundaries.
+- **Hypothesis Differential & Stream Fuzzing**: Continuous property-based testing (`tests/test_differential_fuzz.py`) verifying 1:1 DOM equivalence, rejection parity, chunked stream invariance, and amplification limits against CPython stdlib `ElementTree` and `defusedxml`.
+- **Nightly Sanitizer Pipeline & OSS-Fuzz**: Automated GitHub Actions matrix (`.github/workflows/fuzz.yml`) running all targets under **AddressSanitizer (ASan)**, **UndefinedBehaviorSanitizer (UBSan)**, and **LLVM Value Profiling** (`-use_value_profile=1`), alongside continuous **Google OSS-Fuzz** integration.
+
+For architecture details and test methodologies, see the **[Fuzzing & Verification Architecture Guide](docs/FUZZING.md)**.
 
 ---
 
