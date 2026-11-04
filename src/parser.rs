@@ -4,7 +4,7 @@ use quick_xml::events::Event;
 use quick_xml::name::{Namespace, NamespaceResolver, PrefixDeclaration, QName, ResolveResult};
 use quick_xml::reader::Reader;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RawElement {
     pub tag: String,
     pub attrib: Vec<(String, String)>,
@@ -264,7 +264,7 @@ fn normalize_attribute_value(s: &str) -> String {
     out
 }
 
-fn detect_declared_encoding(xml_bytes: &[u8]) -> Option<&'static encoding_rs::Encoding> {
+pub fn detect_declared_encoding(xml_bytes: &[u8]) -> Option<&'static encoding_rs::Encoding> {
     if !xml_bytes.starts_with(b"<?xml") {
         return None;
     }
@@ -299,7 +299,7 @@ fn is_xml_whitespace(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\r' | '\n')
 }
 
-fn check_doctype_casing(bytes: &[u8]) -> bool {
+pub fn check_doctype_casing(bytes: &[u8]) -> bool {
     let mut i = 0;
     while i + 9 <= bytes.len() {
         if bytes[i..].starts_with(b"<!--") {
@@ -339,7 +339,7 @@ fn is_valid_enc_name(name: &str) -> bool {
     }
 }
 
-fn validate_xml_decl(decl_str: &str) -> Result<(), SafeXmlError> {
+pub fn validate_xml_decl(decl_str: &str) -> Result<(), SafeXmlError> {
     if !decl_str.chars().all(is_xml_char) {
         return Err(SafeXmlError::ParseError(
             "Invalid XML character in XML declaration".to_string(),
@@ -469,7 +469,7 @@ fn is_xml_ws_byte(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\r' | b'\n')
 }
 
-fn validate_attribute_whitespace(tag_str: &str) -> Result<(), SafeXmlError> {
+pub fn validate_attribute_whitespace(tag_str: &str) -> Result<(), SafeXmlError> {
     let bytes = tag_str.as_bytes();
     let mut i = 0;
     while i < bytes.len() && !is_xml_ws_byte(bytes[i]) && bytes[i] != b'/' && bytes[i] != b'>' {

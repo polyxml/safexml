@@ -64,9 +64,13 @@ jobs:
         run: cargo check --manifest-path fuzz/Cargo.toml
 
   fuzz-smoke:
-    name: libFuzzer ASan Smoke Test
+    name: libFuzzer ASan Smoke Test (${{ matrix.target }})
     needs: rust-check
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [fuzz_parser, fuzz_structured_xml, fuzz_metamorphic, fuzz_doctype_scanner]
     steps:
       - uses: actions/checkout@v7
 
@@ -78,14 +82,15 @@ jobs:
 
       - name: Seed initial corpus
         run: |
-          mkdir -p fuzz/corpus/fuzz_parser
-          cp fuzz/seeds/*.xml fuzz/corpus/fuzz_parser/ || true
+          mkdir -p fuzz/corpus/${{ matrix.target }}
+          cp fuzz/seeds/*.xml fuzz/corpus/${{ matrix.target }}/ || true
 
-      - name: Run 15s libFuzzer smoke test with AddressSanitizer and XML dictionary
+      - name: Run 10s libFuzzer smoke test with AddressSanitizer and value profiling
         run: |
-          cargo +nightly fuzz run fuzz_parser -- \
+          cargo +nightly fuzz run ${{ matrix.target }} -- \
             -dict=fuzz/xml.dict \
-            -max_total_time=15 \
+            -use_value_profile=1 \
+            -max_total_time=10 \
             -print_final_stats=1
 
   python-test:

@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1.4", features = ["derive"] }
+encoding_rs = "0.8"
 
 [dependencies.safexml]
 path = ".."
@@ -18,5 +19,23 @@ default-features = false
 [[bin]]
 name = "fuzz_parser"
 path = "fuzz_targets/fuzz_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_structured_xml"
+path = "fuzz_targets/fuzz_structured_xml.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_metamorphic"
+path = "fuzz_targets/fuzz_metamorphic.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_doctype_scanner"
+path = "fuzz_targets/fuzz_doctype_scanner.rs"
 test = false
 doc = false
