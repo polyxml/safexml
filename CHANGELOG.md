@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/polyxml/safexml/compare/v1.2.0...v1.3.0) (2026-11-04)
+
+
+### Features
+
+* add state-of-the-art structure-aware, metamorphic, and scanner fuzzing targets ([#25](https://github.com/polyxml/safexml/issues/25)) ([96cc45e](https://github.com/polyxml/safexml/commit/96cc45ef78c5353e44bc1433b837330469f26bb2))
+
 # [1.2.0](https://github.com/polyxml/safexml/compare/v1.1.1...v1.2.0) (2026-10-27)
 
 
