@@ -111,9 +111,9 @@ fn sanitize_ident(s: &str, default: &str) -> String {
 }
 
 fn sanitize_text(s: &str) -> String {
-    s.replace('<', "&lt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
         .replace('>', "&gt;")
-        .replace('&', "&amp;")
         .chars()
         .filter(|c| *c >= ' ' && *c != '\x7f')
         .take(100)
@@ -121,9 +121,9 @@ fn sanitize_text(s: &str) -> String {
 }
 
 fn sanitize_attr(s: &str) -> String {
-    s.replace('<', "&lt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
         .replace('"', "&quot;")
-        .replace('&', "&amp;")
         .chars()
         .filter(|c| *c >= ' ' && *c != '\x7f')
         .take(50)

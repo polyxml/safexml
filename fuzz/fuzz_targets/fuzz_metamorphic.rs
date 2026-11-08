@@ -15,6 +15,9 @@ fn serialize_raw_element(elem: &RawElement, out: &mut String) {
                 '&' => out.push_str("&amp;"),
                 '<' => out.push_str("&lt;"),
                 '"' => out.push_str("&quot;"),
+                '\r' => out.push_str("&#xD;"),
+                '\n' => out.push_str("&#xA;"),
+                '\t' => out.push_str("&#x9;"),
                 _ => out.push(c),
             }
         }
@@ -31,6 +34,7 @@ fn serialize_raw_element(elem: &RawElement, out: &mut String) {
                     '&' => out.push_str("&amp;"),
                     '<' => out.push_str("&lt;"),
                     '>' => out.push_str("&gt;"),
+                    '\r' => out.push_str("&#xD;"),
                     _ => out.push(c),
                 }
             }
@@ -49,6 +53,7 @@ fn serialize_raw_element(elem: &RawElement, out: &mut String) {
                 '&' => out.push_str("&amp;"),
                 '<' => out.push_str("&lt;"),
                 '>' => out.push_str("&gt;"),
+                '\r' => out.push_str("&#xD;"),
                 _ => out.push(c),
             }
         }
@@ -119,12 +124,14 @@ fuzz_target!(|data: &[u8]| {
     // If the input was valid UTF-8 without an existing XML declaration, transcoding to UTF-16
     // with an XML declaration specifying UTF-16 must produce an identical DOM tree.
     if let Ok(utf8_str) = std::str::from_utf8(data) {
-        if !utf8_str.starts_with("<?xml") {
+        if !utf8_str.trim_start().starts_with("<?xml") {
             let mut utf16_doc = String::from("<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n");
             utf16_doc.push_str(utf8_str);
 
             let (encoded_bytes, _, _) = encoding_rs::UTF_16LE.encode(&utf16_doc);
-            if let Ok(tree_utf16) = parse_xml_bytes(&encoded_bytes, &base_options) {
+            let mut bom_encoded = vec![0xFF, 0xFE];
+            bom_encoded.extend_from_slice(&encoded_bytes);
+            if let Ok(tree_utf16) = parse_xml_bytes(&bom_encoded, &base_options) {
                 assert_eq!(
                     tree1.tag, tree_utf16.tag,
                     "UTF-16 encoding transcoding altered DOM tag"
