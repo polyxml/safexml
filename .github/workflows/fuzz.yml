@@ -33,13 +33,9 @@ jobs:
 
       - name: Setup Rust nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rust-src
 
       - name: Install cargo-fuzz
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-fuzz
+        run: cargo install cargo-fuzz
 
       - name: Seed initial corpus
         run: |
