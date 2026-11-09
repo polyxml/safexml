@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/polyxml/safexml/compare/v1.3.1...v1.3.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **ci:** use macos-latest runner for python wheel build ([155ec71](https://github.com/polyxml/safexml/commit/155ec719e8ecc5c9c548d01ec309ca7411660298))
+
 ## [1.3.1](https://github.com/polyxml/safexml/compare/v1.3.0...v1.3.1) (2026-11-09)
 
 
